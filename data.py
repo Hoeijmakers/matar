@@ -15,13 +15,16 @@ import tayph.util as ut
 
 
 def test_exists(inpath):
+    """
+    This tests if a file exists.
+    """
     if not inpath.exists():
         raise Exception(f"{str(inpath)} not found.")
 
 def read_spectrum(f):
     """
         This reads a HARPS ADP spectrum. ADP spectra are BERV-corrected so they are in a constant
-        stellar frame. Wavelength is returned in nm.
+        stellar inertial frame. Wavelength is returned in nm.
     """
 
     from pathlib import Path
@@ -39,11 +42,10 @@ def read_spectrum(f):
 
 def construct_df(list_of_files,outpath):
     """
-    This takes a list of filepaths to ADP fits files and saves them as a pandas dataframe in an h5
-    file, interpolating the spectra to one wavelength grid.
-    This file is to be read by the read_slice function below.
+    This takes a list of filepaths to ADP fits files and saves them as an h5 datastructure
+    interpolating the spectra to one wavelength grid. This file is to be read by the 
+    read_slice function below.
     """
-    import pandas as pd
     import numpy as np
     import scipy.interpolate as interp
     from tqdm import tqdm
@@ -89,6 +91,11 @@ def construct_df(list_of_files,outpath):
 
 
 def read_slice(min_wavelength,max_wavelength,hdf_file_path):
+    """This reads a slice out of an h5 datastructure written by construct_df above.
+    It only reads between min_wavelength and max_wavelength, so you can deal with a large
+    multitude of ADP spectra without loading them all in memory.
+    """
+
     # Set your minimum and maximum wavelength values
     import h5py
     import pdb

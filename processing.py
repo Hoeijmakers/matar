@@ -3,10 +3,14 @@ import matplotlib.pyplot as plt
 import pdb
 import astropy.stats as stats
 import tayph.functions as fun
-import tayph.util as ut
 from tqdm import tqdm
 
 def histfit(S,plot=False):
+    """
+    This is the algorithm for identifying the quescent continuum. It works by estimating the mean in each spectral bin
+    by fitting the distribution as a Gaussian. However, it only evaluates the histogram partially. It assumes that the
+    points are Gaussian distributed from -0.5 sigma to +5 sigma, takes the histogram of those spectra, and then 
+    """
     std = stats.mad_std(S,ignore_nan=True)
     m = np.nanmedian(S)
 
@@ -27,7 +31,17 @@ def histfit(S,plot=False):
         plt.show()
     return(fit[1])
 
-def cont_fit_line(wl,spec_norm,range_include=[],range_ignore=[],stepsize=0.01,deg=3,plot=False):
+def line_core_fit(wl,spec_norm,range_include=[],range_ignore=[],stepsize=0.01,deg=3,plot=False):
+    """
+    This fits a gaussian plus polynomial (with degree deg) to a line core in a series of spectra.
+    The spectra are first binned down to a stepsize (same units as wl) and then fit using
+    tayph.gaussfit. The fit is only to be done on a narrow range (your line core), which is set by 
+    the two-element list range_include. A region within that inclusion region can be excluded with the
+    two-element range_ignore list. For example if there is a noisy part in the very center, or some
+    narrow component you want to avoid (e.g. telluric or ISM or emission).
+    """
+
+    
     wl=wl*1.0
     spec_norm = spec_norm*1.0
 
@@ -70,6 +84,12 @@ def cont_fit_line(wl,spec_norm,range_include=[],range_ignore=[],stepsize=0.01,de
 
 
 def inspect_spectra(wl,spec_norm,filenames,cutoff=0,alpha=0.3):
+    """
+    This shows normalised spectra and prints the standard deviation of the residuals.
+    The cutoff value is used to print only those spectra with a normalised 
+    standard deviation  higher than that value, so that you are able to 
+    inspect the worst spectra. Alpha is the plotting transparency.
+    """
     R = spec_norm/np.nanmean(spec_norm,axis=0)
     S = np.nanstd(R,axis=1)
     print('#','filename','residual STD')
@@ -80,7 +100,16 @@ def inspect_spectra(wl,spec_norm,filenames,cutoff=0,alpha=0.3):
     plt.show()
     return
 
+
+
+
 def normslice(wl,spec,reject_regions=[],deg=3,plot=True):
+    """
+    This fits a simple polynomial to the vertical-average-residuals of degree deg.
+    reject_regions can be set to a list of tuples that describe the minimum and maximum
+    range over which to set the polynomial fitting weights to zero, by means of rejection.
+    Otherwise, the weights are set to the square root of the mean spectrum.
+    """
     M = np.nanmean(spec,axis=0)
 
     if plot: fig,ax = plt.subplots(2,1,sharex=True)
