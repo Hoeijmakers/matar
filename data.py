@@ -36,8 +36,9 @@ def read_spectrum(f):
 
     with fits.open(file) as hdul:
         spec=hdul[1].data[0]
+        hdr=hdul[0].header
 
-    return(spec[0]/10.0,spec[1],spec[2])
+    return(spec[0]/10.0,spec[1],spec[2],hdr)
 
 
 def construct_df(list_of_files,outpath):
@@ -50,7 +51,7 @@ def construct_df(list_of_files,outpath):
     import scipy.interpolate as interp
     from tqdm import tqdm
     import h5py
-    wl_base,void1,void2 = read_spectrum(list_of_files[0])
+    wl_base,void1,void2,void3 = read_spectrum(list_of_files[0])
     del void1
     del void2
     if os.path.exists(outpath):
@@ -74,10 +75,13 @@ def construct_df(list_of_files,outpath):
         file['filenames'][:]=list_of_files
         if 'wavelength' not in file:
             wavelength=file.create_dataset('wavelength',shape=(len(wl_base)),dtype=dtype)
+        if 'mjd' not in file:
+            mjd=file.create_dataset('mjd',shape=(len(list_of_files)),dtype=dtype)  
         file['wavelength'][:]=wl_base
+
         # Simulate appending rows iteratively
         for i in tqdm(range(len(list_of_files))):
-            wl,fx,err = read_spectrum(list_of_files[i])
+            wl,fx,err,hdr = read_spectrum(list_of_files[i])
             fx_i = interp.interp1d(wl,fx,bounds_error=False,fill_value=0)(wl_base)
             err_i = interp.interp1d(wl,err,bounds_error=False,fill_value=0)(wl_base)#This is
             #an approximation, assuming that the error of adjacent points is nearly identical.
@@ -87,6 +91,7 @@ def construct_df(list_of_files,outpath):
             file['spectra'].resize((current_size + 1, len(wl_base)))
             # Append the new row to the dataset
             file['spectra'][current_size, :] = fx_i
+            file['mjd'][i]=hdr['MJD-OBS']
 
 
 
@@ -104,10 +109,11 @@ def read_slice(min_wavelength,max_wavelength,hdf_file_path):
     with h5py.File(hdf_file_path, 'r') as file:
         wl = np.array(file['wavelength'])
         filelist = np.array(file['filenames'])
+        mjd = np.array(file['mjd'])
         indices = np.arange(len(wl))[(wl >= min_wavelength) & (wl <= max_wavelength)]
         selected_data = np.array(file['spectra'][:, min(indices):max(indices)+1])
         selected_wl = np.array(file['wavelength'][min(indices):max(indices)+1])
-        return(selected_wl,selected_data,filelist)
+        return(selected_wl,selected_data,filelist,mjd)
 
 
 

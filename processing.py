@@ -78,31 +78,6 @@ def line_core_fit(wl,spec_norm,range_include=[],range_ignore=[],stepsize=0.01,de
 
 
 
-
-    
-
-
-
-def inspect_spectra(wl,spec_norm,filenames,cutoff=0,alpha=0.3):
-    """
-    This shows normalised spectra and prints the standard deviation of the residuals.
-    The cutoff value is used to print only those spectra with a normalised 
-    standard deviation  higher than that value, so that you are able to 
-    inspect the worst spectra. Alpha is the plotting transparency.
-    """
-    R = spec_norm/np.nanmean(spec_norm,axis=0)
-    S = np.nanstd(R,axis=1)
-    print('#','filename','residual STD')
-    for i in range(len(spec_norm)):
-        if S[i]>cutoff: 
-            print(i,filenames[i],S[i])
-            plt.plot(wl,spec_norm[i],color='black',linewidth=0.3,alpha=alpha)
-    plt.show()
-    return
-
-
-
-
 def normslice(wl,spec,reject_regions=[],deg=3,plot=True):
     """
     This fits a simple polynomial to the vertical-average-residuals of degree deg.
