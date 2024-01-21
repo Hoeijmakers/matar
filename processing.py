@@ -39,6 +39,9 @@ def line_core_fit(wl,spec_norm,range_include=[],range_ignore=[],stepsize=0.01,de
     the two-element list range_include. A region within that inclusion region can be excluded with the
     two-element range_ignore list. For example if there is a noisy part in the very center, or some
     narrow component you want to avoid (e.g. telluric or ISM or emission).
+
+    The value in each bin is determined by fitting the histogram, and only the top values. This ensures
+    that negative outliers do not participate.
     """
 
     
@@ -72,7 +75,7 @@ def line_core_fit(wl,spec_norm,range_include=[],range_ignore=[],stepsize=0.01,de
         plt.plot(X,Y,'o',color='red')
         plt.plot(wl,fun.gaussian(wl,*fit),color='gold')
         plt.show()
-    return(wl,spec_norm/fun.gaussian(wl,*fit),fun.gaussian(wl,*fit))
+    return(wl,spec_norm,spec_norm/fun.gaussian(wl,*fit),fun.gaussian(wl,*fit))
 
 
 

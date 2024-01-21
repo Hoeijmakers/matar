@@ -116,33 +116,36 @@ def read_slice(min_wavelength,max_wavelength,hdf_file_path):
         return(selected_wl,selected_data,filelist,mjd)
 
 
+def construct_dataframe(inpath,N=0,outpath=''):
+    """This constructs an h5 datafile from a list of fits files co-located in a folder.
+    Set N to an integer to include only the first N spectra (to reduce data volume).
+    The outpath is set optionally. If not set, the outpath is the same as the inpath, 
+    creating a file called spectra.h5.
+    The inpath can also be set to a textfile that contains a list of filepaths.
+    """
+    import os
+    from pathlib import Path
 
-
-
-if __name__ == "__main__":
-    # This code will only run if the script is executed directly
-
-    if not len(sys.argv) > 1:
-        raise Exception("Call as python3 main.py /input/directory/to/fits/files/")
-    inpath = Path(str(sys.argv[1]))
-
+    inpath = Path(str(inpath))
     test_exists(inpath)
 
-    search_string = str(inpath/'*.fits')
-    filelist = glob.glob(search_string)
+    if os.path.isdir(inpath):
+        search_string = str(inpath/'*.fits')
+        filelist = glob.glob(search_string)
+    else:
+        with open(inpath) as file:
+            filelist = [line.rstrip() for line in file]
+        for file in filelist:
+            test_exists(file)
 
+    
     if not len(filelist)>0:
         raise Exception(f"No FITS files encountered in {inpath}")
-
-    if len(sys.argv) > 2:
-        N = int(sys.argv[2])
+    if N>0:
         filelist=filelist[0:N]
-    construct_df(filelist,inpath/'spectra.h5')
 
-
-
-    #
-    # print(np.shape(spec))
-    # pdb.set_trace()
-    # plt.imshow((spec.T/np.nanmean(spec,axis=1)).T,aspect='auto')
-    # plt.show()
+    if len(outpath) > 0:
+        construct_df(filelist,outpath)       
+    else:
+        construct_df(filelist,inpath/'spectra.h5')
+    return
