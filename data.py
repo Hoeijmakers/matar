@@ -1,30 +1,44 @@
 import os
 import numpy as np
 from pathlib import Path
-import astropy.io.fits as fits
-import astropy.constants as const
-import astropy.units as u
-import matplotlib.pyplot as plt
-import tayph.functions as fun
-import tayph.operations as ops
-import sys
 import glob
-import pdb
-import pandas as pd
-import tayph.util as ut
 
 
 def test_exists(inpath):
     """
     This tests if a file exists.
+
+    Parameters
+    ----------
+    inpath : str, Path
+        Filepath to be tested.
     """
-    if not inpath.exists():
+    if not Path(inpath).exists():
         raise Exception(f"{str(inpath)} not found.")
 
 def read_spectrum(f):
     """
         This reads a HARPS ADP spectrum. ADP spectra are BERV-corrected so they are in a constant
         stellar inertial frame. Wavelength is returned in nm.
+
+    Parameters
+    ----------
+    f : str, Path
+        Path to a HARPS ADP FITS file.
+
+    Returns
+    -------
+    wl : array
+        Wavelength axis in nm.
+    
+    fx : array
+        Flux axis.
+
+    err : array
+        Uncertainties axis.
+    
+    hdr : FITS header object
+        Header.
     """
 
     from pathlib import Path
@@ -144,7 +158,7 @@ def construct_dataframe(inpath,N=0,outpath=''):
     if N>0:
         filelist=filelist[0:N]
 
-    if len(outpath) > 0:
+    if len(str(outpath)) > 0:
         construct_df(filelist,outpath)       
     else:
         construct_df(filelist,inpath/'spectra.h5')

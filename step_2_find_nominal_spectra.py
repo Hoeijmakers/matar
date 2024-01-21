@@ -3,15 +3,14 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import sys
 import tayph.util as ut
-from data import test_exists,read_slice
+from data import test_exists,read_slice,construct_dataframe
 from processing import normslice,line_core_fit
 from analysis import select_high_spectra
 
 
 if __name__ == "__main__":
-
     if not len(sys.argv) > 1:
-        raise Exception("Call as python3 main.py /input/directory/to/fits/files/ optional_filename.h5 optional_out_filename.txt")
+        raise Exception("Call as python3 main.py /input/directory/to/fits/files/ optional_filename.h5 optional_out_filename")
     datafolder = Path(str(sys.argv[1]))
     test_exists(datafolder)
     if len(sys.argv) > 2:
@@ -21,9 +20,11 @@ if __name__ == "__main__":
     test_exists(inpath)
 
     if len(sys.argv) > 3:
-        outpath = Path(str(sys.argv[3]))
+        outpath = Path(str(sys.argv[3])+'.txt')
+        outpath2= Path(str(sys.argv[3])+'.h5')
     else:
         outpath = datafolder/'selected_spectra.txt'
+        outpath2 = datafolder/'selected_spectra.h5'
 
 
     #This reads the data saved in the dataframe. For small slices it does so very quickly.
@@ -69,6 +70,8 @@ if __name__ == "__main__":
 
     with open(outpath,'w') as fp:
         for item in filename[nominal_spec_i]:
-            fp.write(f"{item}\n")
+            fp.write(f"{item.decode('unicode_escape')}\n")
     print(f'Assigned {int(len(nominal_spec_i))} files in {str(outpath)}')
+
+    construct_dataframe(outpath,outpath=outpath2) 
 

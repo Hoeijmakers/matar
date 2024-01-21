@@ -122,7 +122,6 @@ def normslice(wl,spec,reject_regions=[],deg=3,plot=True):
             ax[1].plot(wl,p[10],label='Polyfit, no masked weights set.')
         ax[0].legend()
         ax[1].legend()
-    # print(np.sum(np.abs(p_nominal[10]-p[10])))
         plt.show()
 
     return(spec/p/np.mean(M))
