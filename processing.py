@@ -224,7 +224,7 @@ def normslice(wl,spec,reject_regions=[],deg=3,plot=True):
         if plot:
             ax[0].axvspan(bin[0], bin[1], alpha=0.5, color='red')
             ax[1].axvspan(bin[0], bin[1], alpha=0.5, color='red')
-    print(deg)
+
     fit = np.polyfit(wl,(spec/M).T,deg,w=w).T
     if len(reject_regions) != 0:
         fit2 = np.polyfit(wl,(spec/M).T,deg,w=w_nominal).T

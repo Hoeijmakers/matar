@@ -194,4 +194,78 @@ def select_high_spectra(wl,R,wlc,dwl,threshold=0.95,plot=False):
 
 
 
+def read_linelists(textfile):
+    """
+    This reads a 2-column textfile that contains labels and paths to Kitzmann 2023 line lists.
+    The first column contains a species label, the second contains the path to the datfile.
+
+
+    Parameters
+    ----------
+    textfile : str, Path
+        Path to a textfile that contains a 2-column textfile as NiI /path/to/Ni/list.dat.
+        The first column is a label to use. The second is a path to a file that contains a 
+        line list in 4 columns. Of this file, the second column is wavelength in um. 
+        The fourth column is a measure of relative line strength.
+
+
+    Returns
+    -------
+    labels : list
+        List of species labels
+    
+    wl : list
+        List of lists of wavelengths
+
+    fx : list
+        List of lists of line strengths.
+
+    """   
+    from data import test_exists
+
+    test_exists(textfile)
+
+    with open(textfile) as file:
+        entries = [line for line in file]
+    
+    labels,wl,fx = [],[],[]
+    for i in range(len(entries)):
+        labels.append(entries[i].split()[0])
+
+        A = np.loadtxt(entries[i].split()[1])
+        wl.append(A[:,1]*1000.0)
+        fx.append(A[:,3])
+
+    return(labels,wl,fx)
+
+
+def select_in_waveband(wlm,wlmin,wlmax):
+    """
+    From a list of wavelengths, select those wavelengths
+    that fall between a minimum and a maximum.
+    """
+    wlm2 = []
+    for w in wlm:
+        if w>wlmin and w<wlmax:
+            wlm2.append(w)
+    return(np.array(wlm2))
+
+
+
+def plot_labels(target_labels,labels,wlm,sm,dv=0,ax=None):
+    """Wrapper for overplotting labels onto a spectrum."""
+    gamma = (1.0+dv/3e5)
+
+    if not ax:
+        ax = plt.gca()
+    for j in range(len(labels)):
+        if labels[j] in target_labels:
+            for i in range(len(wlm[j])):
+                if sm[j][i]>0.0:
+                    ax.plot(wlm[j][i]*np.array([1,1])*gamma,[0.0,1.1],color='black')
+                    ax.text(wlm[j][i]*gamma,1.12,labels[j],color='black',ha='center')
+
+
+
+
 

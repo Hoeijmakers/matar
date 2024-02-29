@@ -55,6 +55,53 @@ def read_spectrum(f):
     return(spec[0]/10.0,spec[1],spec[2],hdr)
 
 
+def test_wl_grid(inpath):
+    """
+    This tests the integrity of the wavelength axes of a list of filepaths to HARPS ADP fits files.
+    This is done prior to saving them to a datastructure with construct_dataframe, which assumes that
+    all wavelength axes are identical.
+
+
+    Parameters
+    ----------
+
+    list_of_files : list, tuple
+        List of filenames associated with a spectroscopic time-series to be stored.
+        The structure has the following dict keys: wavelength, spectra, filenames, mjd.
+
+    """
+    import os
+    from pathlib import Path
+    import pdb
+    from tqdm import tqdm
+
+    inpath = Path(str(inpath))
+
+    if os.path.isdir(inpath):
+        test_exists(inpath)
+        search_string = str(inpath/'*.fits')
+        filelist = glob.glob(search_string)
+    else:
+        with open(inpath) as file:
+            filelist = [line.rstrip() for line in file]
+        for file in filelist:
+            test_exists(file)
+
+    if not len(filelist)>0:
+        raise Exception(f"No FITS files encountered in {inpath}")
+
+    wl_list = []
+    for i in tqdm(range(len(filelist))):
+        wl,fx,err,hdr = read_spectrum(filelist[i])
+
+        wl_list.append(wl)
+
+    for i in range(0,9000,900): 
+        print(min(wl_list[i]))
+
+
+
+
 def construct_df(list_of_files,outpath):
     """
     This takes a list of filepaths to HARPS ADP fits files and saves them as an h5 datastructure
@@ -105,6 +152,8 @@ def construct_df(list_of_files,outpath):
             wavelength=file.create_dataset('wavelength',shape=(len(wl_base)),dtype=dtype)
         if 'mjd' not in file:
             mjd=file.create_dataset('mjd',shape=(len(list_of_files)),dtype=dtype)  
+        if 'exptime' not in file:
+            mjd=file.create_dataset('exptime',shape=(len(list_of_files)),dtype=dtype)  
         file['wavelength'][:]=wl_base
 
         # Simulate appending rows iteratively
@@ -120,6 +169,7 @@ def construct_df(list_of_files,outpath):
             # Append the new row to the dataset
             file['spectra'][current_size, :] = fx_i
             file['mjd'][i]=hdr['MJD-OBS']
+            file['exptime'][i]=hdr['EXPTIME']
 
 
 
@@ -170,10 +220,11 @@ def read_slice(min_wavelength,max_wavelength,hdf_file_path):
         wl = np.array(file['wavelength'])
         filelist = np.array(file['filenames'])
         mjd = np.array(file['mjd'])
+        exptime = np.array(file['exptime'])
         indices = np.arange(len(wl))[(wl >= min_wavelength) & (wl <= max_wavelength)]
         selected_data = np.array(file['spectra'][:, min(indices):max(indices)+1])
         selected_wl = np.array(file['wavelength'][min(indices):max(indices)+1])
-    return(selected_wl,selected_data,filelist,mjd)
+    return(selected_wl,selected_data,filelist,mjd,exptime)
 
 
 def construct_dataframe(inpath,N=0,outpath=''):
@@ -235,7 +286,24 @@ def construct_dataframe(inpath,N=0,outpath=''):
     if N>0:
         filelist=filelist[0:N]
 
+    # test_wl_grid(filelist)
     if len(str(outpath)) > 0:
         construct_df(filelist,outpath)       
     else:
         construct_df(filelist,inpath/'spectra.h5')
+
+
+def read_fits(filename):
+    """This reads a fits datastructure as saved in step 4"""
+    import astropy.io.fits as fits
+
+    test_exists(filename)
+    with fits.open(filename) as hdul:
+        spec_norm = hdul[0].data
+        wl = hdul[1].data
+        R = hdul[2].data
+        mean_clean_spec = hdul[3].data
+        RV = hdul[4].data
+        mjd = hdul[5].data
+    return(wl,RV,spec_norm,R,mean_clean_spec,mjd)
+
