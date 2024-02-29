@@ -1,0 +1,7 @@
+run_script.sh
+*.h5
+._*
+out_plots
+out_slices
+__pycache__
+linelist_paths.dat
