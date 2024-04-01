@@ -1,7 +1,11 @@
 run_script.sh
 *.h5
+*.dat
 ._*
+*.pdf
+*.png
 out_plots
 out_slices
 __pycache__
 linelist_paths.dat
+.DS_Store
