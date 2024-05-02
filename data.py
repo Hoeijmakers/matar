@@ -16,8 +16,50 @@ def test_exists(inpath):
     if not Path(inpath).exists():
         raise Exception(f"{str(inpath)} not found.")
 
+
+
+def read_e2ds(f):
+    """
+        This reads a HARPS E2DS spectrum. E2DS spectra are not BERV-corrected so we provide the header.
+        They also don't have a wavelength axis provided, but that needs to be distilled from the header too, that's done here. 
+        Wavelength is returned in nm. Uncertainty is assumed to be the square root of the flux and is not returned 
+        (to save memory/diskspace - calculate it when you need it).
+
+    Parameters
+    ----------
+    f : str, Path
+        Path to a HARPS E2DS FITS file.
+
+    Returns
+    -------
+    wl : array
+        Wavelength axis in nm.
+    
+    fx : array
+        Flux axis.
+    
+    hdr : FITS header object
+        Header.
+
+    """
+
+    from pathlib import Path
+    import astropy.io.fits as fits
+    from tayph.util import read_wave_from_e2ds_header
+    file = Path(f)
+    test_exists(file)
+
+    with fits.open(file) as hdul:
+        spec=hdul[0].data
+        hdr=hdul[0].header
+    wl = read_wave_from_e2ds_header(hdr)/10.0
+    # berv = hdr['HIERARCH ESO DRS BERV']
+    return(wl,spec,hdr)
+
+
 def read_spectrum(f):
     """
+        ADP SPECTRA ARE DEPRICATED!
         This reads a HARPS ADP spectrum. ADP spectra are BERV-corrected so they are in a constant
         stellar inertial frame. Wavelength is returned in nm.
 
@@ -57,6 +99,7 @@ def read_spectrum(f):
 
 def test_wl_grid(inpath):
     """
+    THIS IS DEPRICATED!
     This tests the integrity of the wavelength axes of a list of filepaths to HARPS ADP fits files.
     This is done prior to saving them to a datastructure with construct_dataframe, which assumes that
     all wavelength axes are identical.
@@ -102,8 +145,87 @@ def test_wl_grid(inpath):
 
 
 
+def construct_df2d(list_of_files,outpath):
+    """
+    This takes a list of filepaths to HARPS E2DS fits files and saves them as an h5 datastructure
+    along with their wavelength axes.
+
+    Parameters
+    ----------
+
+    list_of_files : list, tuple
+        List of filenames associated with a spectroscopic time-series to be stored.
+        The structure has the following dict keys: wavelength, spectra, filenames, mjd, exptime, berv.
+
+
+    outpath : str, Path
+        The output h5 file.
+
+    """
+    import numpy as np
+    import scipy.interpolate as interp
+    from tqdm import tqdm
+    import h5py
+    import pdb
+    wl_base,void1,void2 = read_e2ds(list_of_files[0])
+    del void1
+    del void2
+    if os.path.exists(outpath):
+        os.remove(outpath)
+
+    n_orders,n_px = np.shape(wl_base) #These are the dimensions of a HARPS e2ds file. These are assumed to be the same for all spectra.
+
+
+    # Create or open the HDF5 file in append mode
+    with h5py.File(outpath, 'a') as file:
+        # Assuming the data has a shape of (number_of_times, number_of_rows, number_of_columns)
+        dataset_shape = (0, n_orders,n_px)  
+        maxshape = (None, n_orders,n_px)
+        dtype = np.float64
+        if 'spectra' not in file:
+            # Create the dataset with an extendable shape
+            dataset = file.create_dataset('spectra', shape=dataset_shape, maxshape=maxshape, dtype=dtype)
+            # dataset2 = file.create_dataset('error', shape=dataset_shape, maxshape=maxshape, dtype=dtype)
+
+        if 'filenames' not in file:
+            filenames=file.create_dataset('filenames',shape=(len(list_of_files)),dtype=h5py.special_dtype(vlen=str))
+        file['filenames'][:]=list_of_files
+        if 'wavelengths' not in file:
+            wavelengths=file.create_dataset('wavelengths', shape=dataset_shape, maxshape=maxshape, dtype=dtype)
+        if 'mjd' not in file:
+            mjd=file.create_dataset('mjd',shape=(len(list_of_files)),dtype=dtype)  
+        if 'exptime' not in file:
+            mjd=file.create_dataset('exptime',shape=(len(list_of_files)),dtype=dtype)
+        if 'berv' not in file: 
+            berv=file.create_dataset('berv',shape=(len(list_of_files)),dtype=dtype) 
+
+
+        # Appending rows iteratively
+        for i in tqdm(range(len(list_of_files))):
+            wl,fx,hdr = read_e2ds(list_of_files[i])
+
+            current_size = file['spectra'].shape[0]
+            # Resize the dataset to accommodate the new row
+            file['spectra'].resize((current_size + 1, n_orders, n_px))
+            file['wavelengths'].resize((current_size + 1, n_orders, n_px))
+            # Append the new row to the dataset
+            file['spectra'][current_size, :, :] = fx
+            file['wavelengths'][current_size, :, :] = wl
+            file['mjd'][i]=hdr['MJD-OBS']
+            file['exptime'][i]=hdr['EXPTIME']
+            file['berv'][i]=hdr['HIERARCH ESO DRS BERV']
+
+
+
+
+
+
+
+
+
 def construct_df(list_of_files,outpath):
     """
+    THIS IS DEPRICATED IN FAVOUR OF CONSTRUCT_DF2D
     This takes a list of filepaths to HARPS ADP fits files and saves them as an h5 datastructure
     interpolating the spectra to one wavelength grid. It is assumed that all files are defined on
     the same wavelength grid.
@@ -144,6 +266,7 @@ def construct_df(list_of_files,outpath):
 
             # Create the dataset with an extendable shape
             dataset = file.create_dataset('spectra', shape=dataset_shape, maxshape=maxshape, dtype=dtype)
+            dataset2 = file.create_dataset('error', shape=dataset_shape, maxshape=maxshape, dtype=dtype)
 
         if 'filenames' not in file:
             filenames=file.create_dataset('filenames',shape=(len(list_of_files)),dtype=h5py.special_dtype(vlen=str))
@@ -160,16 +283,94 @@ def construct_df(list_of_files,outpath):
         for i in tqdm(range(len(list_of_files))):
             wl,fx,err,hdr = read_spectrum(list_of_files[i])
             fx_i = interp.interp1d(wl,fx,bounds_error=False,fill_value=0)(wl_base)
-            err_i = interp.interp1d(wl,err,bounds_error=False,fill_value=0)(wl_base)#This is
+            err_i = np.sqrt(fx_i)
+            #I wanted to interpolate the errors, but it looks like they don't exist.
+            #The ADP files don't contain errors. Clow-face.
+            #I know that np.sqrt() is not a great measure of uncertainty in the s1d spectra because they have been deblazed, but at any small wavelength slice,
+            #the uncertainty should at least follow the square root of the flux, times a near-constant. And that would then be solved via the fitting of beta.
+
+            #Sadly, this does mean that ideally, the whole analysis needs to be re-done using the e2ds files.
+            
+            #err_i=interp.interp1d(wl,err,bounds_error=False,fill_value=0)(wl_base)#This is
             #an approximation, assuming that the error of adjacent points is nearly identical.
             #In reality, an error propagation needs to be carried out.
+
             current_size = file['spectra'].shape[0]
             # Resize the dataset to accommodate the new row
             file['spectra'].resize((current_size + 1, len(wl_base)))
+            file['error'].resize((current_size + 1, len(wl_base)))
             # Append the new row to the dataset
             file['spectra'][current_size, :] = fx_i
+            file['error'][current_size, :] = err_i
             file['mjd'][i]=hdr['MJD-OBS']
             file['exptime'][i]=hdr['EXPTIME']
+
+
+
+def read_order(n,hdf_file_path,px_range=[]):
+    """This reads the time-series of a single order out of an h5 datastructure written by construct_df2d above.
+    It only reads between px_range[0] and px_range[1], so you can deal with a large
+    multitude of e2ds spectra without loading them all in memory.
+
+
+    Parameters
+    ----------
+    i : int
+        The order index. If you want to select a specific wavelength range, learn your HARPS orders!
+
+    hdf_file_path : list, tuple
+        Path to an h5 file generated by construct_df above.
+
+    px_range : list, tuple
+        A list of two values specifying the minumum and maximum pixel in an order, to be able to down-select the amount of data returned further.
+
+    Returns
+    -------
+    selected_wl : array
+        Selected part of the wavelength axis.
+
+    selected_data : array
+        2D array of the spectra in a single order, optionally between the pixel limits.
+
+    selected_error : array
+        2D array of the associated uncertainties.
+
+    filelist : list
+        list of the files in this dataframe.
+
+    mjd : list
+        list of timestamps associated with this data, in mjd.
+
+    texp : list
+        list of exposure times associated with this data, in s.       
+
+    berv : list
+        list of bervs associated with this data, in km/s.
+
+
+
+    """
+
+    import h5py
+    import numpy as np
+    # Check if the dataset exists in the HDF5 file
+    with h5py.File(hdf_file_path, 'r') as file:
+        wl = np.array(file['wavelengths'])
+        filelist = np.array(file['filenames'])
+        mjd = np.array(file['mjd'])
+        exptime = np.array(file['exptime'])
+        berv = np.array(file['berv'])
+
+        if len(px_range) != 2:
+            selected_data =   np.array(file['spectra'][:, n, :])
+            selected_wl = np.array(file['wavelengths'][:, n, :])
+        else:
+            selected_data =   np.array(file['spectra'][:, n, min(px_range):max(px_range)])
+            selected_wl = np.array(file['wavelengths'][:, n, min(px_range):max(px_range)])
+    return(selected_wl,selected_data,np.sqrt(selected_data),filelist,mjd,exptime,berv)
+
+
+
 
 
 
@@ -205,6 +406,9 @@ def read_slice(min_wavelength,max_wavelength,hdf_file_path):
     selected_data : array
         2D array of the spectra between the wavelength limits.
 
+    selected_error : array
+        2D array of the associated uncertainteis.
+
     filelist : list
         list of the files in this dataframe.
 
@@ -223,13 +427,14 @@ def read_slice(min_wavelength,max_wavelength,hdf_file_path):
         exptime = np.array(file['exptime'])
         indices = np.arange(len(wl))[(wl >= min_wavelength) & (wl <= max_wavelength)]
         selected_data = np.array(file['spectra'][:, min(indices):max(indices)+1])
+        selected_error = np.array(file['error'][:, min(indices):max(indices)+1])
         selected_wl = np.array(file['wavelength'][min(indices):max(indices)+1])
-    return(selected_wl,selected_data,filelist,mjd,exptime)
+    return(selected_wl,selected_data,selected_error,filelist,mjd,exptime)
 
 
 def construct_dataframe(inpath,N=0,outpath=''):
-    """This constructs an h5 datafile from a list of fits files co-located in a folder.
-    Set N to an integer to include only the first N spectra (to reduce data volume).
+    """This constructs an h5 datafile from a list of e2ds fits files co-located in a folder.
+    Set N to an integer to include only the first N spectra (to reduce data volume for testing).
     The outpath is set optionally. If not set, the outpath is the same as the inpath, 
     creating a file called spectra.h5.
     The inpath can also be set to a textfile that contains a list of filepaths.
@@ -300,10 +505,13 @@ def read_fits(filename):
     test_exists(filename)
     with fits.open(filename) as hdul:
         spec_norm = hdul[0].data
-        wl = hdul[1].data
-        R = hdul[2].data
-        mean_clean_spec = hdul[3].data
-        RV = hdul[4].data
-        mjd = hdul[5].data
-    return(wl,RV,spec_norm,R,mean_clean_spec,mjd)
+        err_norm = hdul[1].data
+        wl = hdul[2].data
+        R = hdul[3].data
+        mean_clean_spec = hdul[4].data
+        RV = hdul[5].data
+        mjd = hdul[6].data
+        t_exp = hdul[7].data
+    return(wl,RV,spec_norm,err_norm,R,mean_clean_spec,mjd,t_exp)
+
 
