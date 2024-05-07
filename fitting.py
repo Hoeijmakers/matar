@@ -20,17 +20,21 @@ def supersample(x,f=10):
 
 
 #The model for 1 line. ALSO CHANGE IN THE NUMPY CODE BELOW. THIS ONE IS THE NON-JITTED VERSION.
-def gaussian_skewed(x_super, A1=0, mu1=1.0,sigma1=1.0,alpha1=0,c0=1.0,c1=0.0,c2=0.0,c3=0.0,
-                        A2=0.0,mu2=0.0,sigma2=1.0,alpha2=0.0,
-                        A3=0.0,mu3=0.0,sigma3=1.0,alpha3=0.0,
-                        A4=0.0,mu4=0.0,sigma4=1.0,alpha4=0.0,
-                        A5=0.0,mu5=0.0,sigma5=1.0,alpha5=0.0,                        
-                        A6=0.0,mu6=0.0,sigma6=1.0,alpha6=0.0,
-                        A7=0.0,mu7=0.0,sigma7=1.0,alpha7=0.0,
-                        A8=0.0,mu8=0.0,sigma8=1.0,alpha8=0.0,absorption=True):
+def gaussian_skewed(x_super, A1=0, mu1=1.0,sigma1=1.0,alpha1=0,SR1=0.0,c0=1.0,c1=0.0,c2=0.0,c3=0.0,
+                        A2=0.0,mu2=0.0,sigma2=1.0,alpha2=0.0,SR2=0.0,
+                        A3=0.0,mu3=0.0,sigma3=1.0,alpha3=0.0,SR3=0.0,
+                        A4=0.0,mu4=0.0,sigma4=1.0,alpha4=0.0,SR4=0.0,
+                        A5=0.0,mu5=0.0,sigma5=1.0,alpha5=0.0,SR5=0.0,                        
+                        A6=0.0,mu6=0.0,sigma6=1.0,alpha6=0.0,SR6=0.0,
+                        A7=0.0,mu7=0.0,sigma7=1.0,alpha7=0.0,SR7=0.0,
+                        A8=0.0,mu8=0.0,sigma8=1.0,alpha8=0.0,SR8=0.0,absorption=True):
             """x goes in units of wavelength. Sigma goes in km/s. Allows for up to 8 components to be set."""
             import jax.scipy.special
             import numpy as np
+            import pdb
+            import matplotlib.pyplot as plt
+            import numpy as np
+        
             c = 299792.458 #km/s
             if mu2 == 0: mu2 = mu1
             if mu3 == 0: mu3 = mu1
@@ -65,14 +69,15 @@ def gaussian_skewed(x_super, A1=0, mu1=1.0,sigma1=1.0,alpha1=0,c0=1.0,c1=0.0,c2=
             G7 = (np.exp(-0.5 * (V7/sigma7)**2)) * (1+jax.scipy.special.erf(alpha7*V7/sigma7/np.sqrt(2)))
             G8 = (np.exp(-0.5 * (V8/sigma8)**2)) * (1+jax.scipy.special.erf(alpha8*V8/sigma8/np.sqrt(2)))
             if absorption:
-                D = (np.exp(-A1 * G1/np.max(G1)) * 
-                    np.exp(-A2 * G2/np.max(G2)) * 
-                    np.exp(-A3 * G3/np.max(G3)) * 
-                    np.exp(-A4 * G4/np.max(G4)) * 
-                    np.exp(-A5 * G5/np.max(G5)) * 
-                    np.exp(-A6 * G6/np.max(G6)) * 
-                    np.exp(-A7 * G7/np.max(G7)) * 
-                    np.exp(-A8 * G8/np.max(G8)) * 
+                D = (
+                    (1 - SR1*(1-np.exp(-A1 * G1/np.max(G1)))) * 
+                    (1 - SR2*(1-np.exp(-A2 * G2/np.max(G2)))) * 
+                    (1 - SR3*(1-np.exp(-A3 * G3/np.max(G3)))) * 
+                    (1 - SR4*(1-np.exp(-A4 * G4/np.max(G4)))) * 
+                    (1 - SR5*(1-np.exp(-A5 * G5/np.max(G5)))) * 
+                    (1 - SR6*(1-np.exp(-A6 * G6/np.max(G6)))) * 
+                    (1 - SR7*(1-np.exp(-A7 * G7/np.max(G7)))) * 
+                    (1 - SR8*(1-np.exp(-A8 * G8/np.max(G8)))) * 
                     poly)
             else:
                 D = (A1 *G1/np.max(G1) + 
@@ -85,65 +90,10 @@ def gaussian_skewed(x_super, A1=0, mu1=1.0,sigma1=1.0,alpha1=0,c0=1.0,c1=0.0,c2=
                     A8 * G8/np.max(G8) + 
                     poly)
             return D.mean(axis=1)
-#The model for 1 line. ALSO CHANGE IN THE NUMPY CODE BELOW. THIS ONE IS THE NON-JITTED VERSION.
-def gaussian_skewed_abs(x_super, A=0.0, x0=0.0,sigma=1.0,alpha=0,c0=1.0,c1=0.0,c2=0.0):
-    """x goes in units of wavelength. Sigma goes in km/s. Absorption-line version of a Gaussian.
-    A is the line center optical depth."""
-    import numpy as np
-    import jax.scipy.special
-    c = 299792.458 #km/s
-    X = (x_super-x0)
-    V = X*c/x0
-    poly = c0 + c1*V +c2*V*V
-    G = (np.exp(-0.5 * (V/sigma)**2)) * (1+jax.scipy.special.erf(alpha*V/sigma/np.sqrt(2)))
-    D = np.exp(-A * G/np.max(G)) * poly
-    return D.mean(axis=1)
-
-#The model for 1 line. ALSO CHANGE IN THE NUMPY CODE BELOW. THIS ONE IS THE NON-JITTED VERSION.
-def gaussian_skewed_triple(x_super, A1=0, x01=0.0,sigma1=1.0,alpha1=0,c0=0.0,c1=0.0,c2=0.0,A2=0.0,x02=0.0,sigma2=0.0,alpha2=0.0,A3=0.0,x03=0.0,sigma3=0.0,alpha3=0.0):
-    """x goes in units of wavelength. Sigma goes in km/s. Allows for up to 3 components to be set."""
-    import numpy as np
-    import jax.scipy.special
-    c = 299792.458 #km/s
-    X1 = (x_super-x01)
-    X2 = (x_super-x02)
-    X3 = (x_super-x03)
-
-    V1 = X1*c/x01
-    V2 = X2*c/x02
-    V3 = X3*c/x03
-
-    G1 = (np.exp(-0.5 * (V1/sigma1)**2)) * (1+jax.scipy.special.erf(alpha1*V1/sigma1/np.sqrt(2)))
-    G2 = (np.exp(-0.5 * (V2/sigma2)**2)) * (1+jax.scipy.special.erf(alpha2*V2/sigma2/np.sqrt(2)))
-    G3 = (np.exp(-0.5 * (V3/sigma3)**2)) * (1+jax.scipy.special.erf(alpha3*V3/sigma3/np.sqrt(2)))
-
-    D = A1 * G1/np.max(G1) + A2 * G2/np.max(G2) + A3 * G3/np.max(G3) + c0 + c1*V1 +c2*V1*V1
-    return D.mean(axis=1)
-
-#The model for 1 line. ALSO CHANGE IN THE NUMPY CODE BELOW. THIS ONE IS THE NON-JITTED VERSION.
-def gaussian_skewed_abs_triple(x_super, A1=0.0, x01=0.0,sigma1=1.0,alpha1=0,c0=1.0,c1=0.0,c2=0.0,A2=0.0,x02=0.0,sigma2=0.0,alpha2=0.0,A3=0.0,x03=0.0,sigma3=0.0,alpha3=0.0):
-    """x goes in units of wavelength. Sigma goes in km/s. Absorption-line version of a Gaussian.
-    A is the line center optical depth. Allows for up to 3 components to be set."""
-    import numpy as np
-    import jax.scipy.special
-    c = 299792.458 #km/s
-    X1 = (x_super-x01)
-    X2 = (x_super-x02)
-    X3 = (x_super-x03)
-    V1 = X1*c/x01
-    V2 = X2*c/x02
-    V3 = X3*c/x03
-    poly = c0 + c1*V1 +c2*V1*V1
-
-    G1 = (np.exp(-0.5 * (V1/sigma1)**2)) * (1+jax.scipy.special.erf(alpha1*V1/sigma1/np.sqrt(2)))
-    G2 = (np.exp(-0.5 * (V2/sigma2)**2)) * (1+jax.scipy.special.erf(alpha2*V2/sigma2/np.sqrt(2)))
-    G3 = (np.exp(-0.5 * (V3/sigma3)**2)) * (1+jax.scipy.special.erf(alpha3*V3/sigma3/np.sqrt(2)))
-
-    D = np.exp(-A1 * G1/np.max(G1)) * np.exp(-A2 * G2/np.max(G2)) * np.exp(-A3 * G3/np.max(G3)) * poly
-    return D.mean(axis=1)
 
 
-def fit_lines(x,y,yerr,bounds,cpu_cores=4,oversample=10,progress_bar=True,nwarmup=200,nsamples=300,plot=True,absorption=True):
+
+def fit_lines(x,y,yerr,bounds,cpu_cores=4,oversample=10,progress_bar=True,nwarmup=200,nsamples=300,plot=True,absorption=True,plotname=''):
     """
     This function fits a (potentially skewed) Gaussian line profile to a chunk of spectrum.
     Multiple chunks of spectrum (currently up to 2) can be passed, and then this will fit those
@@ -155,14 +105,15 @@ def fit_lines(x,y,yerr,bounds,cpu_cores=4,oversample=10,progress_bar=True,nwarmu
 
     Depending on whether 1 or 2 components are set (by passing 1 or 2 chunks), these parameters are:
 
-    beta,A,x0,sigma,alpha,c0,c1,c2. That's an array of len 8.
-    beta,A,x0,sigma,alpha,c0,c1,c2,R,dx1,d0,d1,d2. Len 13.
+    beta,A,x0,sigma,alpha,SR,c0,c1,c2. That's an array of len 9.
+    beta,A,x0,sigma,alpha,SR,c0,c1,c2,R,dx1,d0,d1,d2. Len 14.
 
     beta is uniform scaling of the noise. 
     A is the amplitude of the first component.
     x0 is the center wavelength of the first component.
     sigma is the Gaussian sigma width.
     alpha is the skew. Note that for small alpha (<2), sigma and alpha like to be degenerate, so you might consider switching this off.
+    SR is the surface ratio of the obscuring cloud. Only used if absorption == True.
     c0,c1 and c2 are the polynomial parameters (offset, linear, cubic).
     
     In case of two terms, the list goes on:
@@ -237,7 +188,6 @@ def fit_lines(x,y,yerr,bounds,cpu_cores=4,oversample=10,progress_bar=True,nwarmu
     from corner import corner
     from scipy.stats.distributions import norm
 
-
     #Current limitations
     max_components = 8 #max 8 line components per slice.
     degmax = 3 #max 3rd degree (cubic) continuum poly.
@@ -298,9 +248,9 @@ def fit_lines(x,y,yerr,bounds,cpu_cores=4,oversample=10,progress_bar=True,nwarmu
     #We are now going to determine what state we are in, and what input is required.
     #The following are mandatory and optional no matter what state we are in.
     mandatory = ['A1','mu1','sigma1']
-    # optional  = ['alpha1']
-    # optional += [f'c{i}' for i in range(degmax+1)]
 
+    if absorption:
+        mandatory+=['SR1']
     if nterms > 1:
         mandatory+=['R1','dx1']
         # optional += [f'd{i}' for i in range(degmax+1)]
@@ -311,14 +261,15 @@ def fit_lines(x,y,yerr,bounds,cpu_cores=4,oversample=10,progress_bar=True,nwarmu
 
     #How many components are required?
     nc = 1 #default.
-    for i in range(2,max_components+1):
-        if   f'A{i}' in bounds.keys() or f'mu{i}' in bounds.keys() or f'sigma{i}' in bounds.keys() or f'alpha{i}' in bounds.keys() or f'R{i}' in bounds.keys():
+    for i in range(2,max_components+1):#Counting up. The maximum i we encounter is the number of components.
+        if   f'A{i}' in bounds.keys() or f'mu{i}' in bounds.keys() or f'sigma{i}' in bounds.keys() or f'alpha{i}' in bounds.keys() or f'R{i}' in bounds.keys() or f'SR{i}' in bounds.keys():
             nc = i #instead.
     #Then add the required free parameters:
     for i in range(1,max_components):
         if nc > i:
             mandatory+=[f'A{i+1}',f'mu{i+1}',f'sigma{i+1}']
-            # optional.append(f'alpha{i+1}')
+            if absorption:
+                mandatory+=[f'SR{i+1}']
             if nterms > 1:
                 mandatory.append(f'R{i+1}')
             if nterms > 2:
@@ -336,8 +287,8 @@ def fit_lines(x,y,yerr,bounds,cpu_cores=4,oversample=10,progress_bar=True,nwarmu
     all_possible_params = ['beta']
     defaults = [1.0]
     for i in range(1,max_components+1):
-        all_possible_params+=[f'A{i}',f'mu{i}',f'sigma{i}',f'alpha{i}',f'R{i}',f'Q{i}']
-        defaults += [0.0,np.mean(bounds['mu1']),1.0,0.0,1.0,1.0]#Setting defaults like this is mostly to prevent div-0 errors anywhere.
+        all_possible_params+=[f'A{i}',f'mu{i}',f'sigma{i}',f'alpha{i}',f'SR{i}',f'R{i}',f'Q{i}']
+        defaults += [0.0,np.mean(bounds['mu1']),1.0,0.0,0.0,1.0,1.0]#Setting defaults like this is mostly to prevent div-0 errors anywhere.
     for i in range(0,degmax+1):
         all_possible_params+=[f'c{i}',f'd{i}',f'e{i}']
         if i == 0: 
@@ -375,6 +326,10 @@ def fit_lines(x,y,yerr,bounds,cpu_cores=4,oversample=10,progress_bar=True,nwarmu
                     raise Exception(f"A_n may not be set to a negative value ({bounds[k][0]} , {bounds[k][1]}).")
             if 'sigma' in k and (bounds[k][0] <= 0.0 or bounds[k][1] <= 0.0):
                 raise Exception(f"sigma_n may not be set to a non-positive value ({bounds[k][0]} , {bounds[k][1]}).")
+            if 'SR' in k and (bounds[k][0] < 0.0 or bounds[k][1] < 0.0):
+                raise Exception(f"SR_n may not be set to a non-positive value ({bounds[k][0]} , {bounds[k][1]}).")
+            if 'SR' in k and (bounds[k][0] > 1.0 or bounds[k][1] > 0.0):
+                raise Exception(f"SR_n may not be set to be larger than 1.0 ({bounds[k][0]} , {bounds[k][1]}).")
             if k[0] == 'R' and (bounds[k][0] <= 0.0 or bounds[k][1] <= 0.0):
                 raise Exception(f"R_n may not be set to a non-positive value ({bounds[k][0]} , {bounds[k][1]}).")
             if k[0] == 'Q' and (bounds[k][0] <= 0.0 or bounds[k][1] <= 0.0):
@@ -416,7 +371,7 @@ def fit_lines(x,y,yerr,bounds,cpu_cores=4,oversample=10,progress_bar=True,nwarmu
     #that get evaluated. So I may want to split that up into smaller numbers of components.
     if nc == 1 and nterms == 1 and absorption == False:
         @jit
-        def line_model(x_super, A=0, mu=0.0,sigma=1.0,alpha=0,c0=0.0,c1=0.0,c2=0.0,c3=0.0):
+        def line_model(x_super, A=0, mu=0.0,sigma=1.0,alpha=0,SR=0.0,c0=0.0,c1=0.0,c2=0.0,c3=0.0):
             """x goes in units of wavelength. Sigma goes in km/s. x is an array of segments."""
             c = 299792.458 #km/s
             X = (x_super-mu)
@@ -429,27 +384,27 @@ def fit_lines(x,y,yerr,bounds,cpu_cores=4,oversample=10,progress_bar=True,nwarmu
 
     elif nc == 1 and nterms == 1 and absorption == True:
         @jit
-        def line_model(x_super, A=0, mu=0.0,sigma=1.0,alpha=0,c0=0.0,c1=0.0,c2=0.0,c3=0.0):
+        def line_model(x_super, A=0, mu=0.0,sigma=1.0,alpha=0,SR=1.0,c0=0.0,c1=0.0,c2=0.0,c3=0.0):
             """x goes in units of wavelength. Sigma goes in km/s."""
             c = 299792.458 #km/s
             X = (x_super-mu)
             V = X*c/mu
             poly = c0 + c1*V + c2*V*V + c3*V*V*V
             G = (jnp.exp(-0.5 * (V/sigma)**2)) * (1+jax.scipy.special.erf(alpha*V/sigma/jnp.sqrt(2)))
-            D = jnp.exp(-A * G/np.max(G)) * poly
+            D = (1- SR * (1-jnp.exp(-A * G/np.max(G)))) * poly
             return D.mean(axis=1)
         
 
     elif nc > 1 and nterms == 1 and absorption == False:
         @jit
-        def line_model(x_super, A1=0, mu1=0.0,sigma1=1.0,alpha1=0,c0=0.0,c1=0.0,c2=0.0,c3=0.0,
-                        A2=0.0,mu2=0.0,sigma2=1.0,alpha2=0.0,
-                        A3=0.0,mu3=0.0,sigma3=1.0,alpha3=0.0,
-                        A4=0.0,mu4=0.0,sigma4=1.0,alpha4=0.0,
-                        A5=0.0,mu5=0.0,sigma5=1.0,alpha5=0.0,                        
-                        A6=0.0,mu6=0.0,sigma6=1.0,alpha6=0.0,
-                        A7=0.0,mu7=0.0,sigma7=1.0,alpha7=0.0,
-                        A8=0.0,mu8=0.0,sigma8=1.0,alpha8=0.0):
+        def line_model(x_super, A1=0, mu1=0.0,sigma1=1.0,alpha1=0,SR1=0.0,c0=0.0,c1=0.0,c2=0.0,c3=0.0,
+                        A2=0.0,mu2=0.0,sigma2=1.0,alpha2=0.0,SR2=0.0,
+                        A3=0.0,mu3=0.0,sigma3=1.0,alpha3=0.0,SR3=0.0,
+                        A4=0.0,mu4=0.0,sigma4=1.0,alpha4=0.0,SR4=0.0,
+                        A5=0.0,mu5=0.0,sigma5=1.0,alpha5=0.0,SR5=0.0,                        
+                        A6=0.0,mu6=0.0,sigma6=1.0,alpha6=0.0,SR6=0.0,
+                        A7=0.0,mu7=0.0,sigma7=1.0,alpha7=0.0,SR7=0.0,
+                        A8=0.0,mu8=0.0,sigma8=1.0,alpha8=0.0,SR8=0.0):
             """x goes in units of wavelength. Sigma goes in km/s. Allows for up to 8 components to be set."""
             c = 299792.458 #km/s
             X1 = x_super-mu1
@@ -490,14 +445,14 @@ def fit_lines(x,y,yerr,bounds,cpu_cores=4,oversample=10,progress_bar=True,nwarmu
 
     elif nc > 1 and nterms == 1 and absorption == True:
         @jit
-        def line_model(x_super, A1=0, mu1=0.0,sigma1=1.0,alpha1=0,c0=0.0,c1=0.0,c2=0.0,c3=0.0,
-                        A2=0.0,mu2=0.0,sigma2=1.0,alpha2=0.0,
-                        A3=0.0,mu3=0.0,sigma3=1.0,alpha3=0.0,
-                        A4=0.0,mu4=0.0,sigma4=1.0,alpha4=0.0,
-                        A5=0.0,mu5=0.0,sigma5=1.0,alpha5=0.0,                        
-                        A6=0.0,mu6=0.0,sigma6=1.0,alpha6=0.0,
-                        A7=0.0,mu7=0.0,sigma7=1.0,alpha7=0.0,
-                        A8=0.0,mu8=0.0,sigma8=1.0,alpha8=0.0):
+        def line_model(x_super, A1=0, mu1=0.0,sigma1=1.0,alpha1=0,SR1=1.0,c0=0.0,c1=0.0,c2=0.0,c3=0.0,
+                        A2=0.0,mu2=0.0,sigma2=1.0,alpha2=0.0,SR2=1.0,
+                        A3=0.0,mu3=0.0,sigma3=1.0,alpha3=0.0,SR3=1.0,
+                        A4=0.0,mu4=0.0,sigma4=1.0,alpha4=0.0,SR4=1.0,
+                        A5=0.0,mu5=0.0,sigma5=1.0,alpha5=0.0,SR5=1.0,                        
+                        A6=0.0,mu6=0.0,sigma6=1.0,alpha6=0.0,SR6=1.0,
+                        A7=0.0,mu7=0.0,sigma7=1.0,alpha7=0.0,SR7=1.0,
+                        A8=0.0,mu8=0.0,sigma8=1.0,alpha8=0.0,SR8=1.0):
             """x goes in units of wavelength. Sigma goes in km/s. Allows for up to 8 components to be set."""
             c = 299792.458 #km/s
             X1 = x_super-mu1
@@ -525,22 +480,23 @@ def fit_lines(x,y,yerr,bounds,cpu_cores=4,oversample=10,progress_bar=True,nwarmu
             G6 = (jnp.exp(-0.5 * (V6/sigma6)**2)) * (1+jax.scipy.special.erf(alpha6*V6/sigma6/jnp.sqrt(2)))
             G7 = (jnp.exp(-0.5 * (V7/sigma7)**2)) * (1+jax.scipy.special.erf(alpha7*V7/sigma7/jnp.sqrt(2)))
             G8 = (jnp.exp(-0.5 * (V8/sigma8)**2)) * (1+jax.scipy.special.erf(alpha8*V8/sigma8/jnp.sqrt(2)))
-            D = (jnp.exp(-A1 * G1/jnp.max(G1)) * 
-                 jnp.exp(-A2 * G2/jnp.max(G2)) * 
-                 jnp.exp(-A3 * G3/jnp.max(G3)) * 
-                 jnp.exp(-A4 * G4/jnp.max(G4)) * 
-                 jnp.exp(-A5 * G5/jnp.max(G5)) * 
-                 jnp.exp(-A6 * G6/jnp.max(G6)) * 
-                 jnp.exp(-A7 * G7/jnp.max(G7)) * 
-                 jnp.exp(-A8 * G8/jnp.max(G8)) * 
-                 poly)
+            D = (
+                (1-SR1*(1-jnp.exp(-A1 * G1/jnp.max(G1)))) * 
+                (1-SR2*(1-jnp.exp(-A2 * G2/jnp.max(G2)))) * 
+                (1-SR3*(1-jnp.exp(-A3 * G3/jnp.max(G3)))) * 
+                (1-SR4*(1-jnp.exp(-A4 * G4/jnp.max(G4)))) * 
+                (1-SR5*(1-jnp.exp(-A5 * G5/jnp.max(G5)))) * 
+                (1-SR6*(1-jnp.exp(-A6 * G6/jnp.max(G6)))) * 
+                (1-SR7*(1-jnp.exp(-A7 * G7/jnp.max(G7)))) * 
+                (1-SR8*(1-jnp.exp(-A8 * G8/jnp.max(G8)))) * 
+                poly)
             return D.mean(axis=1)
     #We have now finished defining all cases where the number of slices is only one.
 
 
     elif nc == 1 and nterms == 2 and absorption == False:
         @jit
-        def line_model(x_super, A=0, mu=0.0,sigma=1.0,alpha=0,c0=1.0,c1=0.0,c2=0.0,c3=0.0,R=0, dx1=0.0,d0=0.0,d1=0.0,d2=0.0,d3=0.0):
+        def line_model(x_super, A=0, mu=0.0,sigma=1.0,alpha=0,SR=0.0,c0=1.0,c1=0.0,c2=0.0,c3=0.0,R=0, dx1=0.0,d0=0.0,d1=0.0,d2=0.0,d3=0.0):
             """x goes in units of wavelength. Sigma goes in km/s.
             Alpha and sigma are the same for both components.
             This is an absorption line model, so it is multiplicative."""
@@ -561,7 +517,7 @@ def fit_lines(x,y,yerr,bounds,cpu_cores=4,oversample=10,progress_bar=True,nwarmu
 
     elif nc == 1 and nterms == 2 and absorption == True:
         @jit
-        def line_model(x_super, A=0, mu=0.0,sigma=1.0,alpha=0,c0=1.0,c1=0.0,c2=0.0,c3=0.0,R=0, dx1=0.0,d0=0.0,d1=0.0,d2=0.0,d3=0.0):
+        def line_model(x_super, A=0, mu=0.0,sigma=1.0,alpha=0,SR=1.0,c0=1.0,c1=0.0,c2=0.0,c3=0.0,R=0, dx1=0.0,d0=0.0,d1=0.0,d2=0.0,d3=0.0):
             """x goes in units of wavelength. Sigma goes in km/s.
             Alpha and sigma are the same for both components.
             This is an absorption line model, so it is multiplicative."""
@@ -574,8 +530,8 @@ def fit_lines(x,y,yerr,bounds,cpu_cores=4,oversample=10,progress_bar=True,nwarmu
             poly2 = d0 + d1*V2 + d2*V2**2 + d3*V2**3
             G1 = (jnp.exp(-0.5 * (V1/sigma)**2)) * (1+jax.scipy.special.erf(alpha*V1/sigma/jnp.sqrt(2)))
             G2 = (jnp.exp(-0.5 * (V2/sigma)**2)) * (1+jax.scipy.special.erf(alpha*V2/sigma/jnp.sqrt(2)))
-            D1 = jnp.exp(-A   * G1/jnp.max(G1)) * poly1
-            D2 = jnp.exp(-A/R * G2/jnp.max(G2)) * poly2
+            D1 = (1-SR*(1-jnp.exp(-A   * G1/jnp.max(G1)))) * poly1
+            D2 = (1-SR*(1-jnp.exp(-A/R * G2/jnp.max(G2)))) * poly2
             D = jnp.concatenate([D1,D2])
             return D.mean(axis=1)
         
@@ -583,14 +539,14 @@ def fit_lines(x,y,yerr,bounds,cpu_cores=4,oversample=10,progress_bar=True,nwarmu
     elif nc > 1 and nterms == 2 and absorption == False:
         @jit
         def line_model(x_super,dx1=0.0,c0=0.0,c1=0.0,c2=0.0,c3=0.0,d0=0.0,d1=0.0,d2=0.0,d3=0.0,
-                        A1=0.0,mu1=0.0,sigma1=1.0,alpha1=0.0,R1=1.0,
-                        A2=0.0,mu2=0.0,sigma2=1.0,alpha2=0.0,R2=1.0,
-                        A3=0.0,mu3=0.0,sigma3=1.0,alpha3=0.0,R3=1.0,
-                        A4=0.0,mu4=0.0,sigma4=1.0,alpha4=0.0,R4=1.0,
-                        A5=0.0,mu5=0.0,sigma5=1.0,alpha5=0.0,R5=1.0,                        
-                        A6=0.0,mu6=0.0,sigma6=1.0,alpha6=0.0,R6=1.0,
-                        A7=0.0,mu7=0.0,sigma7=1.0,alpha7=0.0,R7=1.0,
-                        A8=0.0,mu8=0.0,sigma8=1.0,alpha8=0.0,R8=1.0):
+                        A1=0.0,mu1=0.0,sigma1=1.0,alpha1=0.0,R1=1.0,SR1=0.0,
+                        A2=0.0,mu2=0.0,sigma2=1.0,alpha2=0.0,R2=1.0,SR2=0.0,
+                        A3=0.0,mu3=0.0,sigma3=1.0,alpha3=0.0,R3=1.0,SR3=0.0,
+                        A4=0.0,mu4=0.0,sigma4=1.0,alpha4=0.0,R4=1.0,SR4=0.0,
+                        A5=0.0,mu5=0.0,sigma5=1.0,alpha5=0.0,R5=1.0,SR5=0.0,                        
+                        A6=0.0,mu6=0.0,sigma6=1.0,alpha6=0.0,R6=1.0,SR6=0.0,
+                        A7=0.0,mu7=0.0,sigma7=1.0,alpha7=0.0,R7=1.0,SR7=0.0,
+                        A8=0.0,mu8=0.0,sigma8=1.0,alpha8=0.0,R8=1.0,SR8=0.0):
             """x goes in units of wavelength. Sigma goes in km/s. Allows for up to 8 components to be set."""
             c = 299792.458 #km/s
             X11 = x_super[0]-mu1
@@ -667,14 +623,14 @@ def fit_lines(x,y,yerr,bounds,cpu_cores=4,oversample=10,progress_bar=True,nwarmu
     elif nc > 1 and nterms == 2 and absorption == True:
         @jit
         def line_model(x_super,dx1=0.0,c0=0.0,c1=0.0,c2=0.0,c3=0.0,d0=0.0,d1=0.0,d2=0.0,d3=0.0,
-                        A1=0.0,mu1=0.0,sigma1=1.0,alpha1=0.0,R1=1.0,
-                        A2=0.0,mu2=0.0,sigma2=1.0,alpha2=0.0,R2=1.0,
-                        A3=0.0,mu3=0.0,sigma3=1.0,alpha3=0.0,R3=1.0,
-                        A4=0.0,mu4=0.0,sigma4=1.0,alpha4=0.0,R4=1.0,
-                        A5=0.0,mu5=0.0,sigma5=1.0,alpha5=0.0,R5=1.0,                        
-                        A6=0.0,mu6=0.0,sigma6=1.0,alpha6=0.0,R6=1.0,
-                        A7=0.0,mu7=0.0,sigma7=1.0,alpha7=0.0,R7=1.0,
-                        A8=0.0,mu8=0.0,sigma8=1.0,alpha8=0.0,R8=1.0):
+                        A1=0.0,mu1=0.0,sigma1=1.0,alpha1=0.0,R1=1.0,SR1=1.0,
+                        A2=0.0,mu2=0.0,sigma2=1.0,alpha2=0.0,R2=1.0,SR2=1.0,
+                        A3=0.0,mu3=0.0,sigma3=1.0,alpha3=0.0,R3=1.0,SR3=1.0,
+                        A4=0.0,mu4=0.0,sigma4=1.0,alpha4=0.0,R4=1.0,SR4=1.0,
+                        A5=0.0,mu5=0.0,sigma5=1.0,alpha5=0.0,R5=1.0,SR5=1.0,                        
+                        A6=0.0,mu6=0.0,sigma6=1.0,alpha6=0.0,R6=1.0,SR6=1.0,
+                        A7=0.0,mu7=0.0,sigma7=1.0,alpha7=0.0,R7=1.0,SR7=1.0,
+                        A8=0.0,mu8=0.0,sigma8=1.0,alpha8=0.0,R8=1.0,SR8=1.0):
             """x goes in units of wavelength. Sigma goes in km/s. Allows for up to 8 components to be set."""
             c = 299792.458 #km/s
             X11 = x_super[0]-mu1
@@ -727,36 +683,49 @@ def fit_lines(x,y,yerr,bounds,cpu_cores=4,oversample=10,progress_bar=True,nwarmu
             G26 = (jnp.exp(-0.5 * (V26/sigma6)**2)) * (1+jax.scipy.special.erf(alpha6*V26/sigma6/jnp.sqrt(2)))
             G27 = (jnp.exp(-0.5 * (V27/sigma7)**2)) * (1+jax.scipy.special.erf(alpha7*V27/sigma7/jnp.sqrt(2)))
             G28 = (jnp.exp(-0.5 * (V28/sigma8)**2)) * (1+jax.scipy.special.erf(alpha8*V28/sigma8/jnp.sqrt(2)))
-            D1 =(jnp.exp(-A1 * G11/jnp.max(G11)) * 
-                 jnp.exp(-A2 * G12/jnp.max(G12)) * 
-                 jnp.exp(-A3 * G13/jnp.max(G13)) * 
-                 jnp.exp(-A4 * G14/jnp.max(G14)) * 
-                 jnp.exp(-A5 * G15/jnp.max(G15)) * 
-                 jnp.exp(-A6 * G16/jnp.max(G16)) * 
-                 jnp.exp(-A7 * G17/jnp.max(G17)) * 
-                 jnp.exp(-A8 * G18/jnp.max(G18)) * 
+            D1 =((1-SR1*(1-jnp.exp(-A1 * G11/jnp.max(G11)))) * 
+                 (1-SR2*(1-jnp.exp(-A2 * G12/jnp.max(G12)))) * 
+                 (1-SR3*(1-jnp.exp(-A3 * G13/jnp.max(G13)))) * 
+                 (1-SR4*(1-jnp.exp(-A4 * G14/jnp.max(G14)))) * 
+                 (1-SR5*(1-jnp.exp(-A5 * G15/jnp.max(G15)))) * 
+                 (1-SR6*(1-jnp.exp(-A6 * G16/jnp.max(G16)))) * 
+                 (1-SR7*(1-jnp.exp(-A7 * G17/jnp.max(G17)))) * 
+                 (1-SR8*(1-jnp.exp(-A8 * G18/jnp.max(G18)))) * 
                  poly1)
-            D2 =(jnp.exp(-A1/R1 * G21/jnp.max(G21)) * 
-                 jnp.exp(-A2/R2 * G22/jnp.max(G22)) * 
-                 jnp.exp(-A3/R3 * G23/jnp.max(G23)) * 
-                 jnp.exp(-A4/R4 * G24/jnp.max(G24)) * 
-                 jnp.exp(-A5/R5 * G25/jnp.max(G25)) * 
-                 jnp.exp(-A6/R6 * G26/jnp.max(G26)) * 
-                 jnp.exp(-A7/R7 * G27/jnp.max(G27)) * 
-                 jnp.exp(-A8/R8 * G28/jnp.max(G28)) * 
+            D2 =((1-SR1*(1-jnp.exp(-A1/R1 * G21/jnp.max(G21)))) * 
+                 (1-SR2*(1-jnp.exp(-A2/R2 * G22/jnp.max(G22)))) * 
+                 (1-SR3*(1-jnp.exp(-A3/R3 * G23/jnp.max(G23)))) * 
+                 (1-SR4*(1-jnp.exp(-A4/R4 * G24/jnp.max(G24)))) * 
+                 (1-SR5*(1-jnp.exp(-A5/R5 * G25/jnp.max(G25)))) * 
+                 (1-SR6*(1-jnp.exp(-A6/R6 * G26/jnp.max(G26)))) * 
+                 (1-SR7*(1-jnp.exp(-A7/R7 * G27/jnp.max(G27)))) * 
+                 (1-SR8*(1-jnp.exp(-A8/R8 * G28/jnp.max(G28)))) * 
                  poly2)
             D = jnp.concatenate([D1,D2])
             return D.mean(axis=1)
+
     else:
         raise Exception(f'No model function defined for your case (nc={nc},nterms={nterms},abs={absorption})')
 
 
+
+
+
+
+
+
+
+
+
+    # That concludes the definition of the line models. Now all that's left is to parse those into the numpyro models.
+    # Again a set of if-statements to distinguish the cases and their appropriate inputs.
     if nc == 1 and nterms == 1:
         def numpyro_model(predict=False):
             model_spectrum = line_model(x_supers, A=get_param_functions['A1'](), 
                                         mu=get_param_functions['mu1'](),
                                         sigma=get_param_functions['sigma1'](),
                                         alpha=get_param_functions['alpha1'](),
+                                        SR=get_param_functions['SR1'](),
                                         c0=get_param_functions['c0'](),
                                         c1=get_param_functions['c1'](),
                                         c2=get_param_functions['c2'](),
@@ -772,14 +741,14 @@ def fit_lines(x,y,yerr,bounds,cpu_cores=4,oversample=10,progress_bar=True,nwarmu
                                         c1=get_param_functions['c1'](),
                                         c2=get_param_functions['c2'](),
                                         c3=get_param_functions['c3'](),
-                        A1=get_param_functions['A1'](),mu1=get_param_functions['mu1'](),sigma1=get_param_functions['sigma1'](),alpha1=get_param_functions['alpha1'](),
-                        A2=get_param_functions['A2'](),mu2=get_param_functions['mu2'](),sigma2=get_param_functions['sigma2'](),alpha2=get_param_functions['alpha2'](),
-                        A3=get_param_functions['A3'](),mu3=get_param_functions['mu3'](),sigma3=get_param_functions['sigma3'](),alpha3=get_param_functions['alpha3'](),
-                        A4=get_param_functions['A4'](),mu4=get_param_functions['mu4'](),sigma4=get_param_functions['sigma4'](),alpha4=get_param_functions['alpha4'](),
-                        A5=get_param_functions['A5'](),mu5=get_param_functions['mu5'](),sigma5=get_param_functions['sigma5'](),alpha5=get_param_functions['alpha5'](),                        
-                        A6=get_param_functions['A6'](),mu6=get_param_functions['mu6'](),sigma6=get_param_functions['sigma6'](),alpha6=get_param_functions['alpha6'](),
-                        A7=get_param_functions['A7'](),mu7=get_param_functions['mu7'](),sigma7=get_param_functions['sigma7'](),alpha7=get_param_functions['alpha7'](),
-                        A8=get_param_functions['A8'](),mu8=get_param_functions['mu8'](),sigma8=get_param_functions['sigma8'](),alpha8=get_param_functions['alpha8']())
+                        A1=get_param_functions['A1'](),mu1=get_param_functions['mu1'](),sigma1=get_param_functions['sigma1'](),alpha1=get_param_functions['alpha1'](),SR1=get_param_functions['SR1'](),
+                        A2=get_param_functions['A2'](),mu2=get_param_functions['mu2'](),sigma2=get_param_functions['sigma2'](),alpha2=get_param_functions['alpha2'](),SR2=get_param_functions['SR2'](),
+                        A3=get_param_functions['A3'](),mu3=get_param_functions['mu3'](),sigma3=get_param_functions['sigma3'](),alpha3=get_param_functions['alpha3'](),SR3=get_param_functions['SR3'](),
+                        A4=get_param_functions['A4'](),mu4=get_param_functions['mu4'](),sigma4=get_param_functions['sigma4'](),alpha4=get_param_functions['alpha4'](),SR4=get_param_functions['SR4'](),
+                        A5=get_param_functions['A5'](),mu5=get_param_functions['mu5'](),sigma5=get_param_functions['sigma5'](),alpha5=get_param_functions['alpha5'](),SR5=get_param_functions['SR5'](),                        
+                        A6=get_param_functions['A6'](),mu6=get_param_functions['mu6'](),sigma6=get_param_functions['sigma6'](),alpha6=get_param_functions['alpha6'](),SR6=get_param_functions['SR6'](),
+                        A7=get_param_functions['A7'](),mu7=get_param_functions['mu7'](),sigma7=get_param_functions['sigma7'](),alpha7=get_param_functions['alpha7'](),SR7=get_param_functions['SR7'](),
+                        A8=get_param_functions['A8'](),mu8=get_param_functions['mu8'](),sigma8=get_param_functions['sigma8'](),alpha8=get_param_functions['alpha8'](),SR8=get_param_functions['SR8']())
             if predict:
                 numpyro.deterministic("model_spectrum", model_spectrum)
             numpyro.sample("obs", dist.Normal(loc=model_spectrum,scale=get_param_functions['beta']()*YERR), obs=Y)
@@ -791,6 +760,7 @@ def fit_lines(x,y,yerr,bounds,cpu_cores=4,oversample=10,progress_bar=True,nwarmu
                                         mu=get_param_functions['mu1'](),
                                         sigma=get_param_functions['sigma1'](),
                                         alpha=get_param_functions['alpha1'](),
+                                        SR=get_param_functions['SR1'](),
                                         c0=get_param_functions['c0'](),
                                         c1=get_param_functions['c1'](),
                                         c2=get_param_functions['c2'](),
@@ -816,14 +786,14 @@ def fit_lines(x,y,yerr,bounds,cpu_cores=4,oversample=10,progress_bar=True,nwarmu
                                         d2=get_param_functions['d2'](),
                                         d3=get_param_functions['d3'](),
                                         dx1=get_param_functions['dx1'](),
-                        A1=get_param_functions['A1'](),mu1=get_param_functions['mu1'](),sigma1=get_param_functions['sigma1'](),alpha1=get_param_functions['alpha1'](),R1=get_param_functions['R1'](),
-                        A2=get_param_functions['A2'](),mu2=get_param_functions['mu2'](),sigma2=get_param_functions['sigma2'](),alpha2=get_param_functions['alpha2'](),R2=get_param_functions['R2'](),
-                        A3=get_param_functions['A3'](),mu3=get_param_functions['mu3'](),sigma3=get_param_functions['sigma3'](),alpha3=get_param_functions['alpha3'](),R3=get_param_functions['R3'](),
-                        A4=get_param_functions['A4'](),mu4=get_param_functions['mu4'](),sigma4=get_param_functions['sigma4'](),alpha4=get_param_functions['alpha4'](),R4=get_param_functions['R4'](),
-                        A5=get_param_functions['A5'](),mu5=get_param_functions['mu5'](),sigma5=get_param_functions['sigma5'](),alpha5=get_param_functions['alpha5'](),R5=get_param_functions['R5'](),                        
-                        A6=get_param_functions['A6'](),mu6=get_param_functions['mu6'](),sigma6=get_param_functions['sigma6'](),alpha6=get_param_functions['alpha6'](),R6=get_param_functions['R6'](),
-                        A7=get_param_functions['A7'](),mu7=get_param_functions['mu7'](),sigma7=get_param_functions['sigma7'](),alpha7=get_param_functions['alpha7'](),R7=get_param_functions['R7'](),
-                        A8=get_param_functions['A8'](),mu8=get_param_functions['mu8'](),sigma8=get_param_functions['sigma8'](),alpha8=get_param_functions['alpha8'](),R8=get_param_functions['R8']())
+                        A1=get_param_functions['A1'](),mu1=get_param_functions['mu1'](),sigma1=get_param_functions['sigma1'](),alpha1=get_param_functions['alpha1'](),R1=get_param_functions['R1'](),SR1=get_param_functions['SR1'](),
+                        A2=get_param_functions['A2'](),mu2=get_param_functions['mu2'](),sigma2=get_param_functions['sigma2'](),alpha2=get_param_functions['alpha2'](),R2=get_param_functions['R2'](),SR2=get_param_functions['SR2'](),
+                        A3=get_param_functions['A3'](),mu3=get_param_functions['mu3'](),sigma3=get_param_functions['sigma3'](),alpha3=get_param_functions['alpha3'](),R3=get_param_functions['R3'](),SR3=get_param_functions['SR3'](),
+                        A4=get_param_functions['A4'](),mu4=get_param_functions['mu4'](),sigma4=get_param_functions['sigma4'](),alpha4=get_param_functions['alpha4'](),R4=get_param_functions['R4'](),SR4=get_param_functions['SR4'](),
+                        A5=get_param_functions['A5'](),mu5=get_param_functions['mu5'](),sigma5=get_param_functions['sigma5'](),alpha5=get_param_functions['alpha5'](),R5=get_param_functions['R5'](),SR5=get_param_functions['SR5'](),                        
+                        A6=get_param_functions['A6'](),mu6=get_param_functions['mu6'](),sigma6=get_param_functions['sigma6'](),alpha6=get_param_functions['alpha6'](),R6=get_param_functions['R6'](),SR6=get_param_functions['SR6'](),
+                        A7=get_param_functions['A7'](),mu7=get_param_functions['mu7'](),sigma7=get_param_functions['sigma7'](),alpha7=get_param_functions['alpha7'](),R7=get_param_functions['R7'](),SR7=get_param_functions['SR7'](),
+                        A8=get_param_functions['A8'](),mu8=get_param_functions['mu8'](),sigma8=get_param_functions['sigma8'](),alpha8=get_param_functions['alpha8'](),R8=get_param_functions['R8'](),SR8=get_param_functions['SR8']())
             if predict:
                 numpyro.deterministic("model_spectrum", model_spectrum)
             numpyro.sample("obs", dist.Normal(loc=model_spectrum,scale=get_param_functions['beta']()*YERR), obs=Y)
@@ -832,6 +802,8 @@ def fit_lines(x,y,yerr,bounds,cpu_cores=4,oversample=10,progress_bar=True,nwarmu
     
 
 
+
+    # Now we are done. The rest is running the model:
     rng_seed = 0
     rng_keys = split(PRNGKey(rng_seed), cpu_cores)
     sampler = NUTS(numpyro_model,dense_mass=True)
@@ -851,12 +823,10 @@ def fit_lines(x,y,yerr,bounds,cpu_cores=4,oversample=10,progress_bar=True,nwarmu
 
     if plot:
         result = arviz.from_numpyro(mcmc)
-        corner(result,quiet=True)
-        plt.savefig('cornerplot.png',dpi=250)
+        corner(result,quiet=True,show_titles=True)
+        plt.savefig(f'{plotname}_cornerplot.png',dpi=250)
         plt.show()
 
-
-        from scipy.stats.distributions import norm
         beta=np.median(samples['beta'])
         low_1, mid_1, high_1 = np.percentile(pred['model_spectrum'], 100 * norm.cdf([-1, 0,1]), axis=0)
         low_2, mid_2, high_2 = np.percentile(pred['model_spectrum'], 100 * norm.cdf([-2, 0,2]), axis=0)
@@ -865,6 +835,16 @@ def fit_lines(x,y,yerr,bounds,cpu_cores=4,oversample=10,progress_bar=True,nwarmu
         if len(x) == 1:
             ax=[ax,0]
         for i in range(len(x)):
+            for j in range(1,9):
+                try:
+                    linecenter = np.median(samples[f'mu{j}'])
+                    if i == 0:
+                        ax[i].axvline(linecenter,alpha=0.5,color=f'C{j-1}')
+                    if i == 1:
+                        offset = np.median(samples['dx1'])
+                        ax[i].axvline(linecenter+offset,alpha=0.5,color=f'C{j-1}')
+                except:
+                    pass
             sel = (X>np.min(x[i]))&(X<np.max(x[i]))
             ax[i].plot(X[sel], mid_1[sel],label='Mean model',color='red')
             ax[i].plot(X[sel], Y[sel]-mid_1[sel],color='grey',label='Residual')
@@ -872,14 +852,38 @@ def fit_lines(x,y,yerr,bounds,cpu_cores=4,oversample=10,progress_bar=True,nwarmu
             ax[i].fill_between(X[sel], low_2[sel], high_2[sel], alpha=0.2, color='DodgerBlue')
             ax[i].fill_between(X[sel], low_3[sel], high_3[sel], alpha=0.2, color='DodgerBlue')
             ax[i].errorbar(X[sel],Y[sel],fmt='.',yerr=beta*YERR[sel],label='Data & scaled error',color='black')
-            ax[i].set_xlabel('Pixel position')
+            ax[i].set_xlabel('Wavelength')
             ax[i].set_ylabel('Flux')
         ax[0].legend() 
-        plt.savefig('bestfit.png',dpi=250)
+        plt.savefig(f'{plotname}_bestfit.png',dpi=250)
         plt.show()
 
 
-    return(mcmc)
+    return(mcmc.get_samples(),line_model,x_supers)
+
+def get_bestfit_params(samples):
+    """This gets the medians and standar deviations of all sampled parameters from the samples dict."""
+    import numpy as np
+    out = {}
+    out2 ={}
+    for k in samples.keys():
+        out[k] = np.median(samples[k])
+        out2[k]= np.std(samples[k])
+    return(out,out2)
+
+def drs(samples):
+    """This draws a random sample combination from the samples dict"""
+    import numpy.random
+    out = {}
+    a_param = samples.keys()[0]
+    N = len(samples[a_param])
+    i = int(numpy.random.uniform(0,N-1))
+    for k in samples.keys():
+        out[k] = samples[k][i]
+    return(out)
+
+
+
 
 
 
@@ -1098,7 +1102,7 @@ def test(nc=1,nterms=1,absorption=True):
         bounds['A7'] = [0,2]
         bounds['mu7'] = [mu17-0.03,mu17+0.03]
         bounds['sigma7'] = [5,25]
-        bounds['A8'] = [0,1]
+        bounds['A8'] = [0,2]
         bounds['mu8'] = [mu18-0.03,mu18+0.03]
         bounds['sigma8'] = [5,25]
         bounds['c0'] = [0.97,1.03]
