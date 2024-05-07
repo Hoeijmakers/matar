@@ -307,7 +307,7 @@ def construct_df(list_of_files,outpath):
 
 
 
-def read_order(n,hdf_file_path,px_range=[]):
+def read_order(n,hdf_file_path,px_range=[],exp=None):
     """This reads the time-series of a single order out of an h5 datastructure written by construct_df2d above.
     It only reads between px_range[0] and px_range[1], so you can deal with a large
     multitude of e2ds spectra without loading them all in memory.
@@ -362,11 +362,19 @@ def read_order(n,hdf_file_path,px_range=[]):
         berv = np.array(file['berv'])
 
         if len(px_range) != 2:
-            selected_data =   np.array(file['spectra'][:, n, :])
-            selected_wl = np.array(file['wavelengths'][:, n, :])
+            if exp is None:
+                selected_data =   np.array(file['spectra'][:, n, :])
+                selected_wl = np.array(file['wavelengths'][:, n, :])
+            else:
+                selected_data =   np.array(file['spectra'][exp, n, :])
+                selected_wl = np.array(file['wavelengths'][exp, n, :])               
         else:
-            selected_data =   np.array(file['spectra'][:, n, min(px_range):max(px_range)])
-            selected_wl = np.array(file['wavelengths'][:, n, min(px_range):max(px_range)])
+            if exp is None:
+                selected_data =   np.array(file['spectra'][:, n, min(px_range):max(px_range)])
+                selected_wl = np.array(file['wavelengths'][:, n, min(px_range):max(px_range)])
+            else:
+                selected_data =   np.array(file['spectra'][exp, n, min(px_range):max(px_range)])
+                selected_wl = np.array(file['wavelengths'][exp, n, min(px_range):max(px_range)])                
     return(selected_wl,selected_data,np.sqrt(selected_data),filelist,mjd,exptime,berv)
 
 
