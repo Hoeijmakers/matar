@@ -93,6 +93,27 @@ def gaussian_skewed(x_super, A1=0, mu1=1.0,sigma1=1.0,alpha1=0,SR1=0.0,c0=1.0,c1
 
 
 
+
+def setup_numpyro(cpu_cores):
+    """All import statements needed to run the fit_line routine below, to be called at the very start of any
+    fitting exercise. This ensures that parallelisation will be available."""
+    import numpyro
+    from numpyro.infer import MCMC, NUTS, Predictive
+    from numpyro import distributions as dist
+    # Set the number of cores on your machine for parallelism:
+    numpyro.set_host_device_count(cpu_cores)
+    import matplotlib.pyplot as plt
+    import numpy as np
+    from jax import config
+    config.update("jax_enable_x64", True)
+    import jax
+    import jax.scipy.special
+    from jax import jit, numpy as jnp
+    from jax.random import PRNGKey, split
+    import arviz
+    from corner import corner
+    from scipy.stats.distributions import norm
+
 def fit_lines(x,y,yerr,bounds,cpu_cores=4,oversample=10,progress_bar=True,nwarmup=200,nsamples=300,plot=True,absorption=True,plotname=''):
     """
     This function fits a (potentially skewed) Gaussian line profile to a chunk of spectrum.
@@ -328,7 +349,7 @@ def fit_lines(x,y,yerr,bounds,cpu_cores=4,oversample=10,progress_bar=True,nwarmu
                 raise Exception(f"sigma_n may not be set to a non-positive value ({bounds[k][0]} , {bounds[k][1]}).")
             if 'SR' in k and (bounds[k][0] < 0.0 or bounds[k][1] < 0.0):
                 raise Exception(f"SR_n may not be set to a non-positive value ({bounds[k][0]} , {bounds[k][1]}).")
-            if 'SR' in k and (bounds[k][0] > 1.0 or bounds[k][1] > 0.0):
+            if 'SR' in k and (bounds[k][0] > 1.0 or bounds[k][1] > 1.0):
                 raise Exception(f"SR_n may not be set to be larger than 1.0 ({bounds[k][0]} , {bounds[k][1]}).")
             if k[0] == 'R' and (bounds[k][0] <= 0.0 or bounds[k][1] <= 0.0):
                 raise Exception(f"R_n may not be set to a non-positive value ({bounds[k][0]} , {bounds[k][1]}).")
@@ -888,7 +909,9 @@ def drs(samples):
 
 
 ### TO DEMONSTRATE THAT THIS CODE WORKS.
-def test(nc=1,nterms=1,absorption=True):
+def test(nc=1,nterms=1,absorption=True,cpu_cores = 3):
+    setup_numpyro(cpu_cores)
+
     import numpy.random
     import matplotlib.pyplot as plt
     import numpy as np
@@ -907,24 +930,29 @@ def test(nc=1,nterms=1,absorption=True):
     yerr1 = np.zeros_like(x1)+noise
     yerr2 = np.zeros_like(x2)+noise
 
-    if nc == 1:
-        A1 = 0.8
+    if nc == 1: #Case of only one line/line system.
+        A1 = 4.0
         mu1 = 580.5
-        A2 = 0.4
+        A2 = A1/2.0
         mu2 = 583.5
-        y1 = gaussian_skewed(xs1,A1=A1,mu1=mu1,sigma1=sigma,alpha1=alpha,c0=c0,c1=c1,c2=c2,c3=c3,absorption=absorption)+numpy.random.normal(scale=noise,size=len(x1))
-        y2 = gaussian_skewed(xs2,A1=A2,mu1=mu2,sigma1=sigma,alpha1=alpha,c0=c0,c1=c1,c2=c2,c3=c3,absorption=absorption)+numpy.random.normal(scale=noise,size=len(x2))
+        SR = 1.0
+        y1 = gaussian_skewed(xs1,A1=A1,mu1=mu1,sigma1=sigma,alpha1=alpha,SR1=SR,c0=c0,c1=c1,c2=c2,c3=c3,absorption=absorption)+numpy.random.normal(scale=noise,size=len(x1))
+        y2 = gaussian_skewed(xs2,A1=A2,mu1=mu2,sigma1=sigma,alpha1=alpha,SR1=SR,c0=c0,c1=c1,c2=c2,c3=c3,absorption=absorption)+numpy.random.normal(scale=noise,size=len(x2))
         bounds = {}
         bounds['beta'] = [0.5,2.0]
-        bounds['A1'] = [0,2]
+        bounds['A1'] = [0,8]
         bounds['mu1'] = [mu1-0.1,mu1+0.1]
         bounds['sigma1'] = [5,30]
         bounds['alpha1'] = [-3,3]
+        if absorption:
+            bounds['SR1'] = [0,1]
+        else:
+            bounds['SR1'] = [1,1]
         bounds['c0'] = [0.9,1.1]
         bounds['c1'] = [-1e-2,1e-2]
         bounds['c2'] = [-1e-4,1e-4]
         bounds['c3'] = [-1e-6,1e-6]
-        if nterms == 2:
+        if nterms == 2:#... in two wl slices.
             bounds['d0'] = [0.9,1.1]
             bounds['d1'] = [-1e-2,1e-2]
             bounds['d2'] = [-1e-4,1e-4]
@@ -933,19 +961,24 @@ def test(nc=1,nterms=1,absorption=True):
             bounds['dx1'] = [3-0.05,3+0.05]
 
 
-    if nc == 3:
+    if nc == 3: #If there are 3 line systems.
         A11 = 0.8
         mu11 = 580.5
         A12 = 0.6
         mu12 = 580.7
         A13 = 0.4
         mu13 = 580.4
-        A21 = 0.4
-        mu21 = 583.5
-        A22 = 0.3
-        mu22 = 583.7
-        A23 = 0.2
-        mu23 = 583.4
+        A21 = A11/2
+        mu21 = mu11+3
+        A22 = A12/2
+        mu22 = mu12+3
+        A23 = A13/2
+        mu23 = mu13+3
+
+        SR1 = 0.5
+        SR2 = 1.0
+        SR3 = 1.0
+
         bounds = {}
         bounds['beta'] = [0.5,2.0]
         bounds['A1'] = [0,2]
@@ -961,6 +994,16 @@ def test(nc=1,nterms=1,absorption=True):
         bounds['c1'] = [-1e-2,1e-2]
         bounds['c2'] = [-1e-4,1e-4]
         bounds['c3'] = [-1e-6,1e-6]
+
+        if absorption:
+            bounds['SR1'] = [0,1]
+            bounds['SR2'] = [0,1]
+            bounds['SR3'] = [0,1] 
+        else:
+            bounds['SR1'] = [1,1]
+            bounds['SR2'] = [1,1]
+            bounds['SR3'] = [1,1]    
+
         if nterms == 2:
             bounds['d0'] = [0.9,1.1]
             bounds['d1'] = [-1e-2,1e-2]
@@ -970,8 +1013,8 @@ def test(nc=1,nterms=1,absorption=True):
             bounds['R2'] = [0.25,4]
             bounds['R3'] = [0.25,4]
             bounds['dx1'] = [3-0.05,3+0.05]
-        y1 = gaussian_skewed(xs1,A1=A11,mu1=mu11,sigma1=sigma,alpha1=alpha,A2=A12,mu2=mu12,sigma2=sigma,alpha2=alpha,A3=A13,mu3=mu13,sigma3=sigma,alpha3=alpha,c0=c0,c1=c1,c2=c2,c3=c3,absorption=absorption)+numpy.random.normal(scale=noise,size=len(x1))
-        y2 = gaussian_skewed(xs2,A1=A21,mu1=mu21,sigma1=sigma,alpha1=alpha,A2=A22,mu2=mu22,sigma2=sigma,alpha2=alpha,A3=A23,mu3=mu23,sigma3=sigma,alpha3=alpha,c0=c0,c1=c1,c2=c2,c3=c3,absorption=absorption)+numpy.random.normal(scale=noise,size=len(x2))
+        y1 = gaussian_skewed(xs1,A1=A11,mu1=mu11,sigma1=sigma,alpha1=alpha,A2=A12,mu2=mu12,sigma2=sigma,alpha2=alpha,A3=A13,mu3=mu13,sigma3=sigma,alpha3=alpha,SR1=SR1,SR2=SR2,SR3=SR3,c0=c0,c1=c1,c2=c2,c3=c3,absorption=absorption)+numpy.random.normal(scale=noise,size=len(x1))
+        y2 = gaussian_skewed(xs2,A1=A21,mu1=mu21,sigma1=sigma,alpha1=alpha,A2=A22,mu2=mu22,sigma2=sigma,alpha2=alpha,A3=A23,mu3=mu23,sigma3=sigma,alpha3=alpha,SR1=SR1,SR2=SR2,SR3=SR3,c0=c0,c1=c1,c2=c2,c3=c3,absorption=absorption)+numpy.random.normal(scale=noise,size=len(x2))
 
     if nc == 6:
         A11 = 2.0
@@ -999,6 +1042,14 @@ def test(nc=1,nterms=1,absorption=True):
         mu25 = mu15+3
         A26 = A16/2
         mu26 = mu16+3
+
+        SR1 = 0.5
+        SR2 = 1.0
+        SR3 = 1.0
+        SR4 = 0.5
+        SR5 = 1.0
+        SR6 = 1.0
+
         bounds = {}
         bounds['beta'] = [0.5,2.0]
         bounds['A1'] = [0,6]
@@ -1023,6 +1074,25 @@ def test(nc=1,nterms=1,absorption=True):
         bounds['c1'] = [-1e-3,1e-3]
         bounds['c2'] = [-2e-6,2e-6]
         bounds['c3'] = [-2e-8,2e-8]
+
+        if absorption:
+            bounds['SR1'] = [0,1]
+            bounds['SR2'] = [0,1]
+            bounds['SR3'] = [0,1]
+            bounds['SR4'] = [0,1]
+            bounds['SR5'] = [1,1]
+            bounds['SR6'] = [1,1]
+        else:
+            bounds['SR1'] = [1,1]
+            bounds['SR2'] = [1,1]
+            bounds['SR3'] = [1,1]
+            bounds['SR4'] = [1,1]
+            bounds['SR5'] = [1,1]
+            bounds['SR6'] = [1,1]
+
+
+
+
         if nterms == 2:
             bounds['d0'] = [0.97,1.03]
             bounds['d1'] = [-1e-2,1e-2]
@@ -1037,10 +1107,10 @@ def test(nc=1,nterms=1,absorption=True):
             bounds['dx1'] = [3-0.05,3+0.05]
         y1 = gaussian_skewed(xs1,A1=A11,mu1=mu11,sigma1=sigma,alpha1=alpha,A2=A12,mu2=mu12,sigma2=sigma,alpha2=alpha,A3=A13,mu3=mu13,sigma3=sigma,alpha3=alpha,
                              A4=A14,mu4=mu14,sigma4=sigma,alpha4=alpha,A5=A15,mu5=mu15,sigma5=sigma,A6=A16,mu6=mu16,sigma6=sigma,alpha6=alpha,
-                             c0=c0,c1=c1,c2=c2,c3=c3,absorption=absorption)+numpy.random.normal(scale=noise,size=len(x1))
+                             c0=c0,c1=c1,c2=c2,c3=c3,SR1=SR1,SR2=SR2,SR3=SR3,SR4=SR4,SR5=SR5,SR6=SR6,absorption=absorption)+numpy.random.normal(scale=noise,size=len(x1))
         y2 = gaussian_skewed(xs2,A1=A21,mu1=mu21,sigma1=sigma,alpha1=alpha,A2=A22,mu2=mu22,sigma2=sigma,alpha2=alpha,A3=A23,mu3=mu23,sigma3=sigma,alpha3=alpha,
                              A4=A24,mu4=mu24,sigma4=sigma,alpha4=alpha,A5=A25,mu5=mu25,sigma5=sigma,A6=A26,mu6=mu26,sigma6=sigma,alpha6=alpha,
-                             c0=c0,c1=c1,c2=c2,c3=c3,absorption=absorption)+numpy.random.normal(scale=noise,size=len(x2))
+                             c0=c0,c1=c1,c2=c2,c3=c3,SR1=SR1,SR2=SR2,SR3=SR3,SR4=SR4,SR5=SR5,SR6=SR6,absorption=absorption)+numpy.random.normal(scale=noise,size=len(x2))
 
 
 
@@ -1079,6 +1149,16 @@ def test(nc=1,nterms=1,absorption=True):
         mu27 = mu17+3
         A28 = A18/2
         mu28 = mu18+3
+
+        SR1 = 0.7
+        SR2 = 0.6
+        SR3 = 0.5
+        SR4 = 0.6
+        SR5 = 1.0
+        SR6 = 1.0
+        SR7 = 1.0
+        SR8 = 1.0
+
         bounds = {}
         bounds['beta'] = [0.5,2.0]
         bounds['A1'] = [0,6]
@@ -1109,6 +1189,27 @@ def test(nc=1,nterms=1,absorption=True):
         bounds['c1'] = [-1e-3,1e-3]
         bounds['c2'] = [-2e-6,2e-6]
         bounds['c3'] = [-2e-8,2e-8]
+
+        if absorption:
+            bounds['SR1'] = [0,1]
+            bounds['SR2'] = [0,1]
+            bounds['SR3'] = [0,1]
+            bounds['SR4'] = [0,1]
+            bounds['SR5'] = [1,1]
+            bounds['SR6'] = [1,1]
+            bounds['SR7'] = [1,1]
+            bounds['SR8'] = [1,1]
+        else:
+            bounds['SR1'] = [1,1]
+            bounds['SR2'] = [1,1]
+            bounds['SR3'] = [1,1]
+            bounds['SR4'] = [1,1]
+            bounds['SR5'] = [1,1]
+            bounds['SR6'] = [1,1]
+            bounds['SR7'] = [1,1]
+            bounds['SR8'] = [1,1]
+
+
         if nterms == 2:
             bounds['d0'] = [0.97,1.03]
             bounds['d1'] = [-1e-2,1e-2]
@@ -1126,11 +1227,11 @@ def test(nc=1,nterms=1,absorption=True):
         y1 = gaussian_skewed(xs1,A1=A11,mu1=mu11,sigma1=sigma,alpha1=alpha,A2=A12,mu2=mu12,sigma2=sigma,alpha2=alpha,A3=A13,mu3=mu13,sigma3=sigma,alpha3=alpha,
                              A4=A14,mu4=mu14,sigma4=sigma,alpha4=alpha,A5=A15,mu5=mu15,sigma5=sigma,A6=A16,mu6=mu16,sigma6=sigma,alpha6=alpha,
                              A7=A27,mu7=mu27,sigma7=sigma,alpha7=alpha,A8=A28,mu8=mu28,sigma8=sigma,alpha8=alpha,
-                             c0=c0,c1=c1,c2=c2,c3=c3,absorption=absorption)+numpy.random.normal(scale=noise,size=len(x1))
+                             c0=c0,c1=c1,c2=c2,c3=c3,SR1=SR1,SR2=SR2,SR3=SR3,SR4=SR4,SR5=SR5,SR6=SR6,SR7=SR7,SR8=SR8,absorption=absorption)+numpy.random.normal(scale=noise,size=len(x1))
         y2 = gaussian_skewed(xs2,A1=A21,mu1=mu21,sigma1=sigma,alpha1=alpha,A2=A22,mu2=mu22,sigma2=sigma,alpha2=alpha,A3=A23,mu3=mu23,sigma3=sigma,alpha3=alpha,
                              A4=A24,mu4=mu24,sigma4=sigma,alpha4=alpha,A5=A25,mu5=mu25,sigma5=sigma,A6=A26,mu6=mu26,sigma6=sigma,alpha6=alpha,
                              A7=A27,mu7=mu27,sigma7=sigma,alpha7=alpha,A8=A28,mu8=mu28,sigma8=sigma,alpha8=alpha,
-                             c0=c0,c1=c1,c2=c2,c3=c3,absorption=absorption)+numpy.random.normal(scale=noise,size=len(x2))
+                             c0=c0,c1=c1,c2=c2,c3=c3,SR1=SR1,SR2=SR2,SR3=SR3,SR4=SR4,SR5=SR5,SR6=SR6,SR7=SR7,SR8=SR8,absorption=absorption)+numpy.random.normal(scale=noise,size=len(x2))
 
 
 
@@ -1138,7 +1239,7 @@ def test(nc=1,nterms=1,absorption=True):
         plt.errorbar(x1,y1,yerr=yerr1,color='black')
         plt.title('Data to to fit') 
         plt.show()  
-        fit_lines([x1],[y1],[yerr1],bounds,cpu_cores=3,oversample=5,progress_bar=True,nwarmup=800,nsamples=400)
+        fit_lines([x1],[y1],[yerr1],bounds,cpu_cores=cpu_cores,oversample=5,absorption=absorption,progress_bar=True,nwarmup=800,nsamples=400)
     if nterms==2:
         fig,ax = plt.subplots(1,2,figsize=(14,5),sharey=True)
 
@@ -1147,4 +1248,4 @@ def test(nc=1,nterms=1,absorption=True):
         ax[0].set_title('Data to to fit')
         ax[1].set_title('Data to fit')
         plt.show()
-        fit_lines([x1,x2],[y1,y2],[yerr1,yerr2],bounds,cpu_cores=3,oversample=5,progress_bar=True,nwarmup=800,nsamples=400)
+        fit_lines([x1,x2],[y1,y2],[yerr1,yerr2],bounds,cpu_cores=cpu_cores,oversample=5,absorption=absorption,progress_bar=True,nwarmup=800,nsamples=400)
