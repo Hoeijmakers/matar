@@ -47,6 +47,7 @@ if __name__ == "__main__":
     if C[1] == 0:
         instrument = 'HARPS'
         norders = 72
+        order_start = 39#Note that before this order, there are no meaningful tellurics and the molecfit continuum behaves weirdly.
     n = C[2]
 
     overwrite = bool(int(C[3]))
@@ -74,7 +75,7 @@ if __name__ == "__main__":
 
     mwl = 0.0
     if mode.lower() == 'gui' or mode.lower()=='both':
-        for i in range(norders):
+        for i in range(order_start,norders):
             wl,fx,void,filelist,mjd,exptime,berv = read_order(int(i),inpath_1,exp=int(n))
             fx_list.append(fx[wl>mwl])#This assumes that orders go from short wl to long wl.
             wl_list.append(wl[wl>mwl])
@@ -83,9 +84,9 @@ if __name__ == "__main__":
         wl_con = np.concatenate(wl_list)
         fx_con = np.concatenate(fx_list)
         print(f'Writing first spectrum {filelist[int(n)]} to {molecfit_input_folder} to start GUI')
-        tel.write_file_to_molecfit(molecfit_input_folder,instrument+'.fits',[fits.getheader(filelist[int(n)])],[ops.airtovac(wl_con)],[fx_con],0,plot=False)
+        tel.write_file_to_molecfit(molecfit_input_folder,instrument+'.fits',[fits.getheader(filelist[int(n)])],[wl_con],[fx_con],0,plot=False)
         tel.execute_molecfit(molecfit_prog_folder,parfile,molecfit_input_folder,gui=True,alias=python_alias)
-
+        tel.remove_output_molecfit(molecfit_input_folder,instrument)
 
     list_of_wlc,list_of_fxc,list_of_trans = [],[],[]
     if mode.lower() == 'batch' or mode.lower()=='both':
@@ -98,8 +99,8 @@ if __name__ == "__main__":
             out_filename = '.'.join(out_filename_split)
             # out_filename = out_filename.decode("utf-8")
             if overwrite == True or Path(out_filename).exists() == False:
-                for i in range(norders):
-                    wl,fx,void,void2,void3,void4,voif5 = read_order(int(i),inpath_1,exp=int(n))
+                for i in range(order_start,norders):
+                    wl,fx,void,void2,void3,void4,void5 = read_order(int(i),inpath_1,exp=int(n))
                     fx_list.append(fx[wl>mwl])
                     wl_list.append(wl[wl>mwl])
                     fx_list_complete.append(fx)
@@ -115,17 +116,17 @@ if __name__ == "__main__":
                 tel.write_file_to_molecfit(molecfit_input_folder,instrument+'.fits',[fits.getheader(filelist[int(n)])],[wl_con],[fx_con],0)
 
                 tel.execute_molecfit(molecfit_prog_folder,parfile,molecfit_input_folder,gui=False)
+                print(f'Retrieving output from {str(molecfit_input_folder/instrument)}')
                 wlc,fxc,trans = tel.retrieve_output_molecfit(molecfit_input_folder/instrument)
                 #Note that regardless of the fact that we input air wavelengths, molecfit returns vaccuum wavelengths.
                 #But we don't need to reverse engineer their airtovac routing because the output spectrum is matched to our input spectrum in air.
                 # pdb.set_trace()
-                trans_i = np.reshape(interp1d(wl_con,trans)(wl_con_complete),(norders,npx)) #Most of the values in wlc and wl_con_complete are identical, and so are the interpolates.
+                trans_i = np.concatenate([np.arange(order_start*npx)*0.0+1.0,interp1d(wl_con,trans)(wl_con_complete)])
+                #Most of the values in wlc and wl_con_complete are identical, and so are the interpolates.
                 #This is only to evaluate what's in the overlap regions.
+                #And expanding with ones all the wavelengths that we didn't bother to execute.
 
-                out_matrix = np.zeros((2,norders,npx))
-                out_matrix[0] = np.reshape(wl_con_complete,(norders,npx))#Now we have an e2ds-like input shape back.
-                out_matrix[1] = trans_i*1.0
-                fits.writeto(out_filename,trans_i,overwrite=True,header=fits.getheader(filelist[int(n)].decode('utf-8')))
+                fits.writeto(out_filename,np.reshape(trans_i,(norders,npx)),overwrite=True,header=fits.getheader(filelist[int(n)].decode('utf-8')),output_verify='fix+warn')
                 tel.remove_output_molecfit(molecfit_input_folder,instrument)
             else:
                 print(f'Skipping {out_filename}: Already exists.')
