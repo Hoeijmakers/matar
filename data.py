@@ -440,7 +440,9 @@ def read_exposure(n,hdf_file_path):
 
 
 def read_slice(min_wavelength,max_wavelength,hdf_file_path):
-    """This reads a slice out of an h5 datastructure written by construct_df above.
+    """DEPRICATED 
+    
+    This reads a slice out of an h5 datastructure written by construct_df above.
     It only reads between min_wavelength and max_wavelength, so you can deal with a large
     multitude of ADP spectra without loading them all in memory.
 
@@ -564,7 +566,9 @@ def construct_dataframe(inpath,N=0,outpath=''):
 
 
 def read_fits(filename):
-    """This reads a fits datastructure as saved in step 4"""
+    """DEPRICATED 
+    
+    This reads a fits datastructure as saved in step 4"""
     import astropy.io.fits as fits
 
     test_exists(filename)

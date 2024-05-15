@@ -166,7 +166,7 @@ def line_core_fit(wl,spec_norm,range_include=[],range_ignore=[],stepsize=0.01,de
 
 
 
-def normslice(wl,spec,reject_regions=[],deg=3,plot=True):
+def normslice(wl,spec,error,reject_regions=[],deg=3,plot=True):
     """
     This fits a simple polynomial to the vertical-average-residuals of degree deg.
     reject_regions can be set to a list of tuples that describe the minimum and maximum
@@ -248,4 +248,4 @@ def normslice(wl,spec,reject_regions=[],deg=3,plot=True):
         ax[1].legend()
         plt.show()
 
-    return(spec/p/np.mean(M))
+    return(spec/p/np.mean(M),error/p/np.mean(M))

@@ -1,6 +1,85 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
+
+def load_order_RV_range(inpath,wlc,RV,norm=True,bervcor=True):
+    """
+    This loads an order, does BERV correction, selects within a certain center wavelength and RV range 
+    (automatically pulling the correct order(s) out), and doing normalization.
+    The wavelength slice within the order(s) that contain the center wavelength has a width of approximately
+    2x RV; but the width and center wavelength vary slightly because the wavelength axes of the pixel grid are not
+    assumed to be exactly constant.
+    
+    The returned RV grid has wlc as its center point, but after application of berv correction."""
+
+    from data import read_order, read_exposure
+    import sys
+    import pdb
+    import astropy.constants as const
+    #selected_wl,selected_data,selected_err,filelist,mjd,exptime,berv = read_order(n,hdf_file_path,px_range=[],exp=None)
+    #selected_wl,selected_data,selected_err,filelist,mjd,exptime,berv = read_exposure(n,hdf_file_path)
+    
+
+    #First load in a single exposure to get the approximate wavelength axis of all the orders.
+    #We use this to determine what order(s) to select.
+    c = const.c.to('km/s').value
+    A = read_exposure(0,inpath)
+    wl2d,fx2d = (A[0],A[1])
+    orders_to_return = []
+    
+    
+    r = wl2d - wlc
+    r_left = wl2d - wlc*(1-RV/c)
+    r_right = wl2d - wlc*(1+RV/c)
+    for i in range(len(wl2d)):
+        if (min(r[i])<0 and max(r[i])>0) or (min(r_left[i])<0 and max(r_left[i])>0) or (min(r_right[i])<0 and max(r_right[i])>0): #This tests if the wlc or any of the selection boundaries occur in any of the orders.
+            orders_to_return.append(i)
+
+
+    if len(orders_to_return) == 0:
+        raise Exception('Error, wlc±RV is not contained in the data!')
+    
+
+    #Now, within these orders, we determine what pixel ranges to return.
+    px_lims_to_return = []
+    
+    for i in orders_to_return:
+        v = (wl2d[i]-wlc)/wlc * c
+        left_px_lim,right_px_lim = np.argmin(np.abs(v+RV)),np.argmin(np.abs(v-RV))
+        px_lims_to_return.append([left_px_lim,right_px_lim])
+
+
+    #Now we read in the actual orders, do bervcor and continuum normalisation, and return as lists.
+    out_wl,out_RV,out_fx,out_err,meanflux = [],[],[],[],[]
+    for i,n in enumerate(orders_to_return): #Can actually only be two, but OK.
+        wl,fx,err,filelist,mjd,exptime,berv = read_order(n,inpath,px_range=px_lims_to_return[i])
+
+        if norm:
+            meanflux = np.mean(fx,axis=1)
+        else:
+            meanflux = 1.0
+        if bervcor:
+            gamma = 1+(berv/c)
+        else:
+            gamma = 1
+        wl_corr = (wl.T*gamma).T
+        v_axis = (wl_corr-wlc) / wlc *c
+
+        out_wl.append(wl_corr)
+        out_RV.append(v_axis)
+        out_fx.append(fx)
+        out_err.append(err)
+
+        #Note how we are dividing by the un-bervcorrected meanflux. Preserving the flux of the order in the original range.
+    meanflux = np.mean(np.concatenate(out_fx,axis=1),axis=1)
+    if norm:
+        for i in range(len(out_fx)):
+            out_fx[i]=(out_fx[i].T/meanflux).T
+    return(out_wl,out_RV,out_fx,out_err,filelist,mjd,exptime,berv,orders_to_return,px_lims_to_return)
+
+
+
+
 def inspect_spectra(wl,spec_norm,filenames,cutoff=0,alpha=0.3):
     """
     Shows normalised spectra and prints the standard deviation of the residuals.
