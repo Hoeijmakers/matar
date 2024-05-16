@@ -166,6 +166,7 @@ def construct_df2d(list_of_files,outpath):
     import scipy.interpolate as interp
     from tqdm import tqdm
     import h5py
+    from pathlib import Path
     import pdb
     wl_base,void1,void2 = read_e2ds(list_of_files[0])
     del void1
@@ -186,7 +187,8 @@ def construct_df2d(list_of_files,outpath):
             # Create the dataset with an extendable shape
             dataset = file.create_dataset('spectra', shape=dataset_shape, maxshape=maxshape, dtype=dtype)
             # dataset2 = file.create_dataset('error', shape=dataset_shape, maxshape=maxshape, dtype=dtype)
-
+        if 'tellurics' not in file:
+            dataset_t = file.create_dataset('tellurics', shape=dataset_shape, maxshape=maxshape, dtype=dtype)
         if 'filenames' not in file:
             filenames=file.create_dataset('filenames',shape=(len(list_of_files)),dtype=h5py.special_dtype(vlen=str))
         file['filenames'][:]=list_of_files
@@ -204,12 +206,21 @@ def construct_df2d(list_of_files,outpath):
         for i in tqdm(range(len(list_of_files))):
             wl,fx,hdr = read_e2ds(list_of_files[i])
 
+            #Load telluric e2ds if exists.
+            telpath = str(list_of_files[i]).replace('.fits','_tel.fits')
+            if Path(telpath).exists():
+                wlt,fxt,hdrt = read_e2ds(telpath)
+            else:
+                fxt = fx*0.0+1.0
+
             current_size = file['spectra'].shape[0]
             # Resize the dataset to accommodate the new row
             file['spectra'].resize((current_size + 1, n_orders, n_px))
+            file['tellurics'].resize((current_size + 1, n_orders, n_px))
             file['wavelengths'].resize((current_size + 1, n_orders, n_px))
             # Append the new row to the dataset
             file['spectra'][current_size, :, :] = fx
+            file['tellurics'][current_size, :, :] = fxt
             file['wavelengths'][current_size, :, :] = wl
             file['mjd'][i]=hdr['MJD-OBS']
             file['exptime'][i]=hdr['EXPTIME']
@@ -331,6 +342,11 @@ def read_order(n,hdf_file_path,px_range=[],exp=None):
 
     selected_data : array
         2D array of the spectra in a single order, optionally between the pixel limits.
+        With tellurics corrected (if tellurics were available)
+
+    selected_data_t: array
+        2D array of the spectra in a single order, optionally between the pixel limits.
+        Without tellurics corrected. If no tellurics are available, this is identical to selected_data.
 
     selected_error : array
         2D array of the associated uncertainties.
@@ -363,19 +379,23 @@ def read_order(n,hdf_file_path,px_range=[],exp=None):
         if len(px_range) != 2:
             if exp is None:
                 selected_data =   np.array(file['spectra'][:, n, :])
+                selected_tellurics =   np.array(file['tellurics'][:, n, :])
                 selected_wl = np.array(file['wavelengths'][:, n, :])
             else:
                 selected_data =   np.array(file['spectra'][exp, n, :])
+                selected_tellurics =   np.array(file['tellurics'][exp, n, :])
                 selected_wl = np.array(file['wavelengths'][exp, n, :])               
         else:
             if exp is None:
                 selected_data =   np.array(file['spectra'][:, n, min(px_range):max(px_range)])
+                selected_tellurics =   np.array(file['tellurics'][:, n, min(px_range):max(px_range)])
                 selected_wl = np.array(file['wavelengths'][:, n, min(px_range):max(px_range)])
             else:
                 selected_data =   np.array(file['spectra'][exp, n, min(px_range):max(px_range)])
+                selected_tellurics =   np.array(file['tellurics'][exp, n, min(px_range):max(px_range)])
                 selected_wl = np.array(file['wavelengths'][exp, n, min(px_range):max(px_range)])   
         selected_data[selected_data<0]=0                
-    return(selected_wl,selected_data,np.sqrt(selected_data),filelist,mjd,exptime,berv)
+    return(selected_wl,selected_data/selected_tellurics,selected_data,np.sqrt(selected_data),filelist,mjd,exptime,berv)
 
 
 def read_exposure(n,hdf_file_path):
@@ -418,7 +438,7 @@ def read_exposure(n,hdf_file_path):
 
 
     """
-
+    import pdb
     import h5py
     import numpy as np
     # Check if the dataset exists in the HDF5 file
@@ -430,10 +450,10 @@ def read_exposure(n,hdf_file_path):
 
 
         selected_data =   np.array(file['spectra'][n, :, :])
+        selected_tellurics =   np.array(file['tellurics'][n, :, :])
         selected_wl = np.array(file['wavelengths'][n, :, :]) 
         selected_data[selected_data<0]=0              
-              
-    return(selected_wl,selected_data,np.sqrt(selected_data),filelist,mjd,exptime,berv)
+    return(selected_wl,selected_data/selected_tellurics,selected_data,np.sqrt(selected_data),filelist,mjd,exptime,berv)
 
 
 
@@ -500,7 +520,9 @@ def read_slice(min_wavelength,max_wavelength,hdf_file_path):
 
 
 def construct_dataframe(inpath,N=0,outpath=''):
-    """This constructs an h5 datafile from a list of e2ds fits files co-located in a folder.
+    """DEPRICATED
+    
+    This constructs an h5 datafile from a list of e2ds fits files co-located in a folder.
     Set N to an integer to include only the first N spectra (to reduce data volume for testing).
     The outpath is set optionally. If not set, the outpath is the same as the inpath, 
     creating a file called spectra.h5.

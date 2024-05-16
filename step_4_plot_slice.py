@@ -35,7 +35,9 @@ if __name__ == "__main__":
     # selected_wl,selected_data,np.sqrt(selected_data),filelist,mjd,exptime,berv
     # wl,spec,err,filelist,mjd,t_exp = read_order(inpath_1)
 
-    wl,RV,orders_norm,err,filelist,mjd,t_exp,berv,orders_returned,px_lims_returned = load_order_RV_range(inpath_1,wlc*(1+vsys/c),drv+33,bervcor=True)#33 km/s is added because we will still be BERV correcting and 33km/s is the maximum possible BERV.
+    wl,RV,orders_norm,orders_norm_t,err,filelist,mjd,t_exp,berv,orders_returned,px_lims_returned = load_order_RV_range(inpath_1,wlc*(1+vsys/c),drv+33)#33 km/s is added because we will still be BERV correcting and 33km/s is the maximum possible BERV.
+
+    
     #Note that wl is now berv-corrected and fx is mean-normalised.
 
     # for i in range(20):

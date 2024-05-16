@@ -24,7 +24,7 @@ def load_order_RV_range(inpath,wlc,RV,norm=True,bervcor=True):
     #We use this to determine what order(s) to select.
     c = const.c.to('km/s').value
     A = read_exposure(0,inpath)
-    wl2d,fx2d = (A[0],A[1])
+    wl2d = A[0]
     orders_to_return = []
     
     
@@ -50,9 +50,9 @@ def load_order_RV_range(inpath,wlc,RV,norm=True,bervcor=True):
 
 
     #Now we read in the actual orders, do bervcor and continuum normalisation, and return as lists.
-    out_wl,out_RV,out_fx,out_err,meanflux = [],[],[],[],[]
+    out_wl,out_RV,out_fx,out_fxt,out_err,meanflux = [],[],[],[],[],[]
     for i,n in enumerate(orders_to_return): #Can actually only be two, but OK.
-        wl,fx,err,filelist,mjd,exptime,berv = read_order(n,inpath,px_range=px_lims_to_return[i])
+        wl,fx,fxt,err,filelist,mjd,exptime,berv = read_order(n,inpath,px_range=px_lims_to_return[i])
 
         if norm:
             meanflux = np.mean(fx,axis=1)
@@ -67,7 +67,8 @@ def load_order_RV_range(inpath,wlc,RV,norm=True,bervcor=True):
 
         out_wl.append(wl_corr)
         out_RV.append(v_axis)
-        out_fx.append(fx)
+        out_fx.append(fx)#This is the spectra with tellurics corrected.
+        out_fxt.append(fxt)#Thats the spectra with tellurics remaining.
         out_err.append(err)
 
         #Note how we are dividing by the un-bervcorrected meanflux. Preserving the flux of the order in the original range.
@@ -75,7 +76,8 @@ def load_order_RV_range(inpath,wlc,RV,norm=True,bervcor=True):
     if norm:
         for i in range(len(out_fx)):
             out_fx[i]=(out_fx[i].T/meanflux).T
-    return(out_wl,out_RV,out_fx,out_err,filelist,mjd,exptime,berv,orders_to_return,px_lims_to_return)
+            out_fxt[i]=(out_fxt[i].T/meanflux).T
+    return(out_wl,out_RV,out_fx,out_fxt,out_err,filelist,mjd,exptime,berv,orders_to_return,px_lims_to_return)
 
 
 
