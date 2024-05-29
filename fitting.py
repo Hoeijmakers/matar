@@ -114,7 +114,21 @@ def setup_numpyro(cpu_cores):
     from corner import corner
     from scipy.stats.distributions import norm
 
-def fit_lines(x,y,yerr,bounds,cpu_cores=4,oversample=10,progress_bar=True,nwarmup=200,nsamples=300,plot=True,absorption=True,plotname=''):
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+def fit_lines(x,y,yerr,bounds,cpu_cores=4,oversample=10,progress_bar=True,nwarmup=200,nsamples=300,plot=True,absorption=True,plotname='',pass_supers=False):
     """
     This function fits a (potentially skewed) Gaussian line profile to a chunk of spectrum.
     Multiple chunks of spectrum (currently up to 2) can be passed, and then this will fit those
@@ -149,11 +163,15 @@ def fit_lines(x,y,yerr,bounds,cpu_cores=4,oversample=10,progress_bar=True,nwarmu
 
     Note that the fitting routine oversamples the line-function by a twice a factor (default is 10, that's 20x samples per original grid-point).
 
-    
+    Set the pass_supers keyword if the x-axis is already an array of super-sampled x-values.
+    This can be needed if part of your data is duplicated (i.e. on overlapping order edges).
+    In that case, you provide the supersampled arrays manually.
+
+
 
        Parameters
     ----------
-    x : array-like
+    x_supers : array-like
         1D array of the input wavelength range, matching the width of y and yerr, or a list of up to 2 of these.
 
     x : array-like
@@ -208,11 +226,12 @@ def fit_lines(x,y,yerr,bounds,cpu_cores=4,oversample=10,progress_bar=True,nwarmu
     import arviz
     from corner import corner
     from scipy.stats.distributions import norm
-
+    import pdb
+    import copy
     #Current limitations
     max_components = 8 #max 8 line components per slice.
     degmax = 3 #max 3rd degree (cubic) continuum poly.
-    maxterms = 2 #Max number of wl slices.
+    maxterms = 4 #Max number of wl slices.
 
     try:
         void = len(x[0]) #If this fails then x[0] is a number which means thet x is passed as an array, not as a list of arrays.
@@ -222,6 +241,9 @@ def fit_lines(x,y,yerr,bounds,cpu_cores=4,oversample=10,progress_bar=True,nwarmu
         x=[x]#Force it into that list afterall.
         y=[y]
         yerr=[yerr]
+
+    if pass_supers and type(x) is not list:
+        raise Exception('Your supersampled x-values need to be in a list, even if there is only one slice.')
 
     if nterms > maxterms:
         raise Exception(f'Only {maxterms} terms can be fit simultaneously in the current implementation. '
@@ -237,20 +259,20 @@ def fit_lines(x,y,yerr,bounds,cpu_cores=4,oversample=10,progress_bar=True,nwarmu
         y[i] = jnp.array(y[i])
         yerr[i] = jnp.array(yerr[i])
 
-    # if nterms==1:
-    #     x_supers = [supersample(x_i,f=oversample) for x_i in x]#This is a list.
-    # if nterms==2:
-    #     x_super1 = supersample(x[0],f=oversample)
-    #     x_super2 = supersample(x[1],f=oversample)
-    #     x_supers = [x_super1,x_super2]
-    if nterms == 1:
-        x_supers = supersample(x[0],f=oversample)
+
+    if not pass_supers:
+        if nterms == 1:
+            x_supers = supersample(x[0],f=oversample)
+        else:
+            x_supers = [supersample(x_i,f=oversample) for x_i in x]#This is a list.
+
     else:
-        x_supers = [supersample(x_i,f=oversample) for x_i in x]#This is a list.
-    X = jnp.concatenate(x)#This is for plotting later.
+        x_supers = copy.deepcopy(x)
+
+        x = [np.mean(x_i,axis=1) for x_i in x]
+    X = jnp.concatenate(x)
     Y = jnp.concatenate(y)#This passes into the numpyro model.
     YERR = jnp.concatenate(yerr)# This too.
-
 
     #OK. Cleared the basic input. Now comes the big one: The parameter dictionaries.
     #First we test consistency:
@@ -274,10 +296,11 @@ def fit_lines(x,y,yerr,bounds,cpu_cores=4,oversample=10,progress_bar=True,nwarmu
         mandatory+=['SR1']
     if nterms > 1:
         mandatory+=['R1','dx1']
-        # optional += [f'd{i}' for i in range(degmax+1)]
-    if nterms > 2:#This cannot be active in the current implentation but this is how we'd do it if there's 3 sections.
+    if nterms > 2:
         mandatory+=['Q1','dx2']
-        # optional += [f'e{i}' for i in range(degmax+1)]
+    if nterms >3:
+        mandatory+=['T1','dx3']
+
 
 
     #How many components are required?
@@ -294,7 +317,9 @@ def fit_lines(x,y,yerr,bounds,cpu_cores=4,oversample=10,progress_bar=True,nwarmu
             if nterms > 1:
                 mandatory.append(f'R{i+1}')
             if nterms > 2:
-                mandatory.append(f'Q{i+1}')#Not used until 3 sections are supported.
+                mandatory.append(f'Q{i+1}')
+            if nterms > 3:
+                mandatory.append(f'T{i+1}')
 
 
 
@@ -308,16 +333,16 @@ def fit_lines(x,y,yerr,bounds,cpu_cores=4,oversample=10,progress_bar=True,nwarmu
     all_possible_params = ['beta']
     defaults = [1.0]
     for i in range(1,max_components+1):
-        all_possible_params+=[f'A{i}',f'mu{i}',f'sigma{i}',f'alpha{i}',f'SR{i}',f'R{i}',f'Q{i}']
-        defaults += [0.0,np.mean(bounds['mu1']),1.0,0.0,0.0,1.0,1.0]#Setting defaults like this is mostly to prevent div-0 errors anywhere.
+        all_possible_params+=[f'A{i}',f'mu{i}',f'sigma{i}',f'alpha{i}',f'SR{i}',f'R{i}',f'Q{i}',f'T{i}']
+        defaults += [0.0,np.mean(bounds['mu1']),1.0,0.0,0.0,1.0,1.0,1.0]#Setting defaults like this is mostly to prevent div-0 errors anywhere.
     for i in range(0,degmax+1):
-        all_possible_params+=[f'c{i}',f'd{i}',f'e{i}']
+        all_possible_params+=[f'c{i}',f'd{i}',f'e{i}',f'f{i}']
         if i == 0: 
-            defaults += [1.0,1.0,1.0]#The default continuum is flat at 1.0, assuming a normalised input spectrum.
+            defaults += [1.0,1.0,1.0,1.0]#The default continuum is flat at 1.0, assuming a normalised input spectrum.
         else:
-            defaults += [0.0,0.0,0.0]#but no other poly parameters. If you add more slices, these defaults also need to be set.
-    all_possible_params+=['dx1','dx2']#Q, e{i} and dy1 are not used until a third slice is supported.
-    defaults+=[0.0,0.0]
+            defaults += [0.0,0.0,0.0,0.0]#but no other poly parameters. If you add more slices, these defaults also need to be set.
+    all_possible_params+=['dx1','dx2','dx3']
+    defaults+=[0.0,0.0,0.0]
 
     #Check that the right number of defaults was set.
     if len(all_possible_params) != len(defaults):
@@ -355,7 +380,8 @@ def fit_lines(x,y,yerr,bounds,cpu_cores=4,oversample=10,progress_bar=True,nwarmu
                 raise Exception(f"R_n may not be set to a non-positive value ({bounds[k][0]} , {bounds[k][1]}).")
             if k[0] == 'Q' and (bounds[k][0] <= 0.0 or bounds[k][1] <= 0.0):
                 raise Exception(f"Q_n may not be set to a non-positive value ({bounds[k][0]} , {bounds[k][1]}).")
-            
+            if k[0] == 'T' and (bounds[k][0] <= 0.0 or bounds[k][1] <= 0.0):
+                raise Exception(f"T_n may not be set to a non-positive value ({bounds[k][0]} , {bounds[k][1]}).")           
 
 
 
@@ -725,6 +751,283 @@ def fit_lines(x,y,yerr,bounds,cpu_cores=4,oversample=10,progress_bar=True,nwarmu
             D = jnp.concatenate([D1,D2])
             return D.mean(axis=1)
 
+    elif nc > 1 and nterms == 3 and absorption == True:
+        @jit
+        def line_model(x_super,dx1=0.0,dx2=0.0,
+                       c0=0.0,c1=0.0,c2=0.0,c3=0.0,
+                       d0=0.0,d1=0.0,d2=0.0,d3=0.0,
+                       e0=0.0,e1=0.0,e2=0.0,e3=0.0,                      
+                        A1=0.0,mu1=0.0,sigma1=1.0,alpha1=0.0,R1=1.0,Q1=1.0,T1=1.0,SR1=1.0,
+                        A2=0.0,mu2=0.0,sigma2=1.0,alpha2=0.0,R2=1.0,Q2=1.0,T2=1.0,SR2=1.0,
+                        A3=0.0,mu3=0.0,sigma3=1.0,alpha3=0.0,R3=1.0,Q3=1.0,T3=1.0,SR3=1.0,
+                        A4=0.0,mu4=0.0,sigma4=1.0,alpha4=0.0,R4=1.0,Q4=1.0,T4=1.0,SR4=1.0,
+                        A5=0.0,mu5=0.0,sigma5=1.0,alpha5=0.0,R5=1.0,Q5=1.0,T5=1.0,SR5=1.0,                        
+                        A6=0.0,mu6=0.0,sigma6=1.0,alpha6=0.0,R6=1.0,Q6=1.0,T6=1.0,SR6=1.0,
+                        A7=0.0,mu7=0.0,sigma7=1.0,alpha7=0.0,R7=1.0,Q7=1.0,T7=1.0,SR7=1.0,
+                        A8=0.0,mu8=0.0,sigma8=1.0,alpha8=0.0,R8=1.0,Q8=1.0,T8=1.0,SR8=1.0):
+            """x goes in units of wavelength. Sigma goes in km/s. Allows for up to 8 components to be set."""
+            c = 299792.458 #km/s
+            X11 = x_super[0]-mu1
+            X12 = x_super[0]-mu2
+            X13 = x_super[0]-mu3
+            X14 = x_super[0]-mu4
+            X15 = x_super[0]-mu5
+            X16 = x_super[0]-mu6
+            X17 = x_super[0]-mu7
+            X18 = x_super[0]-mu8
+            X21 = x_super[1]-(mu1+dx1)
+            X22 = x_super[1]-(mu2+dx1)
+            X23 = x_super[1]-(mu3+dx1)
+            X24 = x_super[1]-(mu4+dx1)
+            X25 = x_super[1]-(mu5+dx1)
+            X26 = x_super[1]-(mu6+dx1)
+            X27 = x_super[1]-(mu7+dx1)
+            X28 = x_super[1]-(mu8+dx1)
+            X31 = x_super[2]-(mu1+dx2)
+            X32 = x_super[2]-(mu2+dx2)
+            X33 = x_super[2]-(mu3+dx2)
+            X34 = x_super[2]-(mu4+dx2)
+            X35 = x_super[2]-(mu5+dx2)
+            X36 = x_super[2]-(mu6+dx2)
+            X37 = x_super[2]-(mu7+dx2)
+            X38 = x_super[2]-(mu8+dx2)
+            V11 = X11*c/mu1
+            V12 = X12*c/mu2
+            V13 = X13*c/mu3
+            V14 = X14*c/mu4
+            V15 = X15*c/mu5
+            V16 = X16*c/mu6
+            V17 = X17*c/mu7
+            V18 = X18*c/mu8
+            V21 = X21*c/(mu1+dx1)
+            V22 = X22*c/(mu2+dx1)
+            V23 = X23*c/(mu3+dx1)
+            V24 = X24*c/(mu4+dx1)
+            V25 = X25*c/(mu5+dx1)
+            V26 = X26*c/(mu6+dx1)
+            V27 = X27*c/(mu7+dx1)
+            V28 = X28*c/(mu8+dx1)
+            V31 = X31*c/(mu1+dx2)
+            V32 = X32*c/(mu2+dx2)
+            V33 = X33*c/(mu3+dx2)
+            V34 = X34*c/(mu4+dx2)
+            V35 = X35*c/(mu5+dx2)
+            V36 = X36*c/(mu6+dx2)
+            V37 = X37*c/(mu7+dx2)
+            V38 = X38*c/(mu8+dx2)
+            poly1 = c0 + c1*V11 + c2*V11**2 +c3*V11**3
+            poly2 = d0 + d1*V21 + d2*V21**2 +d3*V21**3
+            poly3 = e0 + e1*V31 + e2*V31**2 +e3*V31**3
+            G11 = (jnp.exp(-0.5 * (V11/sigma1)**2)) * (1+jax.scipy.special.erf(alpha1*V11/sigma1/jnp.sqrt(2)))
+            G12 = (jnp.exp(-0.5 * (V12/sigma2)**2)) * (1+jax.scipy.special.erf(alpha2*V12/sigma2/jnp.sqrt(2)))
+            G13 = (jnp.exp(-0.5 * (V13/sigma3)**2)) * (1+jax.scipy.special.erf(alpha3*V13/sigma3/jnp.sqrt(2)))
+            G14 = (jnp.exp(-0.5 * (V14/sigma4)**2)) * (1+jax.scipy.special.erf(alpha4*V14/sigma4/jnp.sqrt(2)))
+            G15 = (jnp.exp(-0.5 * (V15/sigma5)**2)) * (1+jax.scipy.special.erf(alpha5*V15/sigma5/jnp.sqrt(2)))
+            G16 = (jnp.exp(-0.5 * (V16/sigma6)**2)) * (1+jax.scipy.special.erf(alpha6*V16/sigma6/jnp.sqrt(2)))
+            G17 = (jnp.exp(-0.5 * (V17/sigma7)**2)) * (1+jax.scipy.special.erf(alpha7*V17/sigma7/jnp.sqrt(2)))
+            G18 = (jnp.exp(-0.5 * (V18/sigma8)**2)) * (1+jax.scipy.special.erf(alpha8*V18/sigma8/jnp.sqrt(2)))
+            G21 = (jnp.exp(-0.5 * (V21/sigma1)**2)) * (1+jax.scipy.special.erf(alpha1*V21/sigma1/jnp.sqrt(2)))
+            G22 = (jnp.exp(-0.5 * (V22/sigma2)**2)) * (1+jax.scipy.special.erf(alpha2*V22/sigma2/jnp.sqrt(2)))
+            G23 = (jnp.exp(-0.5 * (V23/sigma3)**2)) * (1+jax.scipy.special.erf(alpha3*V23/sigma3/jnp.sqrt(2)))
+            G24 = (jnp.exp(-0.5 * (V24/sigma4)**2)) * (1+jax.scipy.special.erf(alpha4*V24/sigma4/jnp.sqrt(2)))
+            G25 = (jnp.exp(-0.5 * (V25/sigma5)**2)) * (1+jax.scipy.special.erf(alpha5*V25/sigma5/jnp.sqrt(2)))
+            G26 = (jnp.exp(-0.5 * (V26/sigma6)**2)) * (1+jax.scipy.special.erf(alpha6*V26/sigma6/jnp.sqrt(2)))
+            G27 = (jnp.exp(-0.5 * (V27/sigma7)**2)) * (1+jax.scipy.special.erf(alpha7*V27/sigma7/jnp.sqrt(2)))
+            G28 = (jnp.exp(-0.5 * (V28/sigma8)**2)) * (1+jax.scipy.special.erf(alpha8*V28/sigma8/jnp.sqrt(2)))
+            G31 = (jnp.exp(-0.5 * (V31/sigma1)**2)) * (1+jax.scipy.special.erf(alpha1*V31/sigma1/jnp.sqrt(2)))
+            G32 = (jnp.exp(-0.5 * (V32/sigma2)**2)) * (1+jax.scipy.special.erf(alpha2*V32/sigma2/jnp.sqrt(2)))
+            G33 = (jnp.exp(-0.5 * (V33/sigma3)**2)) * (1+jax.scipy.special.erf(alpha3*V33/sigma3/jnp.sqrt(2)))
+            G34 = (jnp.exp(-0.5 * (V34/sigma4)**2)) * (1+jax.scipy.special.erf(alpha4*V34/sigma4/jnp.sqrt(2)))
+            G35 = (jnp.exp(-0.5 * (V35/sigma5)**2)) * (1+jax.scipy.special.erf(alpha5*V35/sigma5/jnp.sqrt(2)))
+            G36 = (jnp.exp(-0.5 * (V36/sigma6)**2)) * (1+jax.scipy.special.erf(alpha6*V36/sigma6/jnp.sqrt(2)))
+            G37 = (jnp.exp(-0.5 * (V37/sigma7)**2)) * (1+jax.scipy.special.erf(alpha7*V37/sigma7/jnp.sqrt(2)))
+            G38 = (jnp.exp(-0.5 * (V38/sigma8)**2)) * (1+jax.scipy.special.erf(alpha8*V38/sigma8/jnp.sqrt(2)))
+            D1 =((1-SR1*(1-jnp.exp(-A1 * G11/jnp.max(G11)))) * 
+                 (1-SR2*(1-jnp.exp(-A2 * G12/jnp.max(G12)))) * 
+                 (1-SR3*(1-jnp.exp(-A3 * G13/jnp.max(G13)))) * 
+                 (1-SR4*(1-jnp.exp(-A4 * G14/jnp.max(G14)))) * 
+                 (1-SR5*(1-jnp.exp(-A5 * G15/jnp.max(G15)))) * 
+                 (1-SR6*(1-jnp.exp(-A6 * G16/jnp.max(G16)))) * 
+                 (1-SR7*(1-jnp.exp(-A7 * G17/jnp.max(G17)))) * 
+                 (1-SR8*(1-jnp.exp(-A8 * G18/jnp.max(G18)))) * 
+                 poly1)
+            D2 =((1-SR1*(1-jnp.exp(-A1/R1 * G21/jnp.max(G21)))) * 
+                 (1-SR2*(1-jnp.exp(-A2/R2 * G22/jnp.max(G22)))) * 
+                 (1-SR3*(1-jnp.exp(-A3/R3 * G23/jnp.max(G23)))) * 
+                 (1-SR4*(1-jnp.exp(-A4/R4 * G24/jnp.max(G24)))) * 
+                 (1-SR5*(1-jnp.exp(-A5/R5 * G25/jnp.max(G25)))) * 
+                 (1-SR6*(1-jnp.exp(-A6/R6 * G26/jnp.max(G26)))) * 
+                 (1-SR7*(1-jnp.exp(-A7/R7 * G27/jnp.max(G27)))) * 
+                 (1-SR8*(1-jnp.exp(-A8/R8 * G28/jnp.max(G28)))) * 
+                 poly2)
+            D3 =((1-SR1*(1-jnp.exp(-A1/Q1 * G31/jnp.max(G31)))) * 
+                 (1-SR2*(1-jnp.exp(-A2/Q2 * G32/jnp.max(G32)))) * 
+                 (1-SR3*(1-jnp.exp(-A3/Q3 * G33/jnp.max(G33)))) * 
+                 (1-SR4*(1-jnp.exp(-A4/Q4 * G34/jnp.max(G34)))) * 
+                 (1-SR5*(1-jnp.exp(-A5/Q5 * G35/jnp.max(G35)))) * 
+                 (1-SR6*(1-jnp.exp(-A6/Q6 * G36/jnp.max(G36)))) * 
+                 (1-SR7*(1-jnp.exp(-A7/Q7 * G37/jnp.max(G37)))) * 
+                 (1-SR8*(1-jnp.exp(-A8/Q8 * G38/jnp.max(G38)))) * 
+                 poly3)
+            D = jnp.concatenate([D1,D2,D3])
+            return D.mean(axis=1)
+
+    elif nc > 1 and nterms == 4 and absorption == True:
+        @jit
+        def line_model(x_super,dx1=0.0,dx2=0.0,dx3=0.0,
+                       c0=0.0,c1=0.0,c2=0.0,c3=0.0,
+                       d0=0.0,d1=0.0,d2=0.0,d3=0.0,
+                       e0=0.0,e1=0.0,e2=0.0,e3=0.0,
+                       f0=0.0,f1=0.0,f2=0.0,f3=0.0,                       
+                        A1=0.0,mu1=0.0,sigma1=1.0,alpha1=0.0,R1=1.0,Q1=1.0,T1=1.0,SR1=1.0,
+                        A2=0.0,mu2=0.0,sigma2=1.0,alpha2=0.0,R2=1.0,Q2=1.0,T2=1.0,SR2=1.0,
+                        A3=0.0,mu3=0.0,sigma3=1.0,alpha3=0.0,R3=1.0,Q3=1.0,T3=1.0,SR3=1.0,
+                        A4=0.0,mu4=0.0,sigma4=1.0,alpha4=0.0,R4=1.0,Q4=1.0,T4=1.0,SR4=1.0,
+                        A5=0.0,mu5=0.0,sigma5=1.0,alpha5=0.0,R5=1.0,Q5=1.0,T5=1.0,SR5=1.0,                        
+                        A6=0.0,mu6=0.0,sigma6=1.0,alpha6=0.0,R6=1.0,Q6=1.0,T6=1.0,SR6=1.0,
+                        A7=0.0,mu7=0.0,sigma7=1.0,alpha7=0.0,R7=1.0,Q7=1.0,T7=1.0,SR7=1.0,
+                        A8=0.0,mu8=0.0,sigma8=1.0,alpha8=0.0,R8=1.0,Q8=1.0,T8=1.0,SR8=1.0):
+            """x goes in units of wavelength. Sigma goes in km/s. Allows for up to 8 components to be set."""
+            c = 299792.458 #km/s
+            X11 = x_super[0]-mu1
+            X12 = x_super[0]-mu2
+            X13 = x_super[0]-mu3
+            X14 = x_super[0]-mu4
+            X15 = x_super[0]-mu5
+            X16 = x_super[0]-mu6
+            X17 = x_super[0]-mu7
+            X18 = x_super[0]-mu8
+            X21 = x_super[1]-(mu1+dx1)
+            X22 = x_super[1]-(mu2+dx1)
+            X23 = x_super[1]-(mu3+dx1)
+            X24 = x_super[1]-(mu4+dx1)
+            X25 = x_super[1]-(mu5+dx1)
+            X26 = x_super[1]-(mu6+dx1)
+            X27 = x_super[1]-(mu7+dx1)
+            X28 = x_super[1]-(mu8+dx1)
+            X31 = x_super[2]-(mu1+dx2)
+            X32 = x_super[2]-(mu2+dx2)
+            X33 = x_super[2]-(mu3+dx2)
+            X34 = x_super[2]-(mu4+dx2)
+            X35 = x_super[2]-(mu5+dx2)
+            X36 = x_super[2]-(mu6+dx2)
+            X37 = x_super[2]-(mu7+dx2)
+            X38 = x_super[2]-(mu8+dx2)
+            X41 = x_super[3]-(mu1+dx3)
+            X42 = x_super[3]-(mu2+dx3)
+            X43 = x_super[3]-(mu3+dx3)
+            X44 = x_super[3]-(mu4+dx3)
+            X45 = x_super[3]-(mu5+dx3)
+            X46 = x_super[3]-(mu6+dx3)
+            X47 = x_super[3]-(mu7+dx3)
+            X48 = x_super[3]-(mu8+dx3)
+            V11 = X11*c/mu1
+            V12 = X12*c/mu2
+            V13 = X13*c/mu3
+            V14 = X14*c/mu4
+            V15 = X15*c/mu5
+            V16 = X16*c/mu6
+            V17 = X17*c/mu7
+            V18 = X18*c/mu8
+            V21 = X21*c/(mu1+dx1)
+            V22 = X22*c/(mu2+dx1)
+            V23 = X23*c/(mu3+dx1)
+            V24 = X24*c/(mu4+dx1)
+            V25 = X25*c/(mu5+dx1)
+            V26 = X26*c/(mu6+dx1)
+            V27 = X27*c/(mu7+dx1)
+            V28 = X28*c/(mu8+dx1)
+            V31 = X31*c/(mu1+dx2)
+            V32 = X32*c/(mu2+dx2)
+            V33 = X33*c/(mu3+dx2)
+            V34 = X34*c/(mu4+dx2)
+            V35 = X35*c/(mu5+dx2)
+            V36 = X36*c/(mu6+dx2)
+            V37 = X37*c/(mu7+dx2)
+            V38 = X38*c/(mu8+dx2)
+            V41 = X41*c/(mu1+dx3)
+            V42 = X42*c/(mu2+dx3)
+            V43 = X43*c/(mu3+dx3)
+            V44 = X44*c/(mu4+dx3)
+            V45 = X45*c/(mu5+dx3)
+            V46 = X46*c/(mu6+dx3)
+            V47 = X47*c/(mu7+dx3)
+            V48 = X48*c/(mu8+dx3)
+            poly1 = c0 + c1*V11 + c2*V11**2 +c3*V11**3
+            poly2 = d0 + d1*V21 + d2*V21**2 +d3*V21**3
+            poly3 = e0 + e1*V31 + e2*V31**2 +e3*V31**3
+            poly4 = f0 + f1*V41 + f2*V41**2 +f3*V41**3
+            G11 = (jnp.exp(-0.5 * (V11/sigma1)**2)) * (1+jax.scipy.special.erf(alpha1*V11/sigma1/jnp.sqrt(2)))
+            G12 = (jnp.exp(-0.5 * (V12/sigma2)**2)) * (1+jax.scipy.special.erf(alpha2*V12/sigma2/jnp.sqrt(2)))
+            G13 = (jnp.exp(-0.5 * (V13/sigma3)**2)) * (1+jax.scipy.special.erf(alpha3*V13/sigma3/jnp.sqrt(2)))
+            G14 = (jnp.exp(-0.5 * (V14/sigma4)**2)) * (1+jax.scipy.special.erf(alpha4*V14/sigma4/jnp.sqrt(2)))
+            G15 = (jnp.exp(-0.5 * (V15/sigma5)**2)) * (1+jax.scipy.special.erf(alpha5*V15/sigma5/jnp.sqrt(2)))
+            G16 = (jnp.exp(-0.5 * (V16/sigma6)**2)) * (1+jax.scipy.special.erf(alpha6*V16/sigma6/jnp.sqrt(2)))
+            G17 = (jnp.exp(-0.5 * (V17/sigma7)**2)) * (1+jax.scipy.special.erf(alpha7*V17/sigma7/jnp.sqrt(2)))
+            G18 = (jnp.exp(-0.5 * (V18/sigma8)**2)) * (1+jax.scipy.special.erf(alpha8*V18/sigma8/jnp.sqrt(2)))
+            G21 = (jnp.exp(-0.5 * (V21/sigma1)**2)) * (1+jax.scipy.special.erf(alpha1*V21/sigma1/jnp.sqrt(2)))
+            G22 = (jnp.exp(-0.5 * (V22/sigma2)**2)) * (1+jax.scipy.special.erf(alpha2*V22/sigma2/jnp.sqrt(2)))
+            G23 = (jnp.exp(-0.5 * (V23/sigma3)**2)) * (1+jax.scipy.special.erf(alpha3*V23/sigma3/jnp.sqrt(2)))
+            G24 = (jnp.exp(-0.5 * (V24/sigma4)**2)) * (1+jax.scipy.special.erf(alpha4*V24/sigma4/jnp.sqrt(2)))
+            G25 = (jnp.exp(-0.5 * (V25/sigma5)**2)) * (1+jax.scipy.special.erf(alpha5*V25/sigma5/jnp.sqrt(2)))
+            G26 = (jnp.exp(-0.5 * (V26/sigma6)**2)) * (1+jax.scipy.special.erf(alpha6*V26/sigma6/jnp.sqrt(2)))
+            G27 = (jnp.exp(-0.5 * (V27/sigma7)**2)) * (1+jax.scipy.special.erf(alpha7*V27/sigma7/jnp.sqrt(2)))
+            G28 = (jnp.exp(-0.5 * (V28/sigma8)**2)) * (1+jax.scipy.special.erf(alpha8*V28/sigma8/jnp.sqrt(2)))
+            G31 = (jnp.exp(-0.5 * (V31/sigma1)**2)) * (1+jax.scipy.special.erf(alpha1*V31/sigma1/jnp.sqrt(2)))
+            G32 = (jnp.exp(-0.5 * (V32/sigma2)**2)) * (1+jax.scipy.special.erf(alpha2*V32/sigma2/jnp.sqrt(2)))
+            G33 = (jnp.exp(-0.5 * (V33/sigma3)**2)) * (1+jax.scipy.special.erf(alpha3*V33/sigma3/jnp.sqrt(2)))
+            G34 = (jnp.exp(-0.5 * (V34/sigma4)**2)) * (1+jax.scipy.special.erf(alpha4*V34/sigma4/jnp.sqrt(2)))
+            G35 = (jnp.exp(-0.5 * (V35/sigma5)**2)) * (1+jax.scipy.special.erf(alpha5*V35/sigma5/jnp.sqrt(2)))
+            G36 = (jnp.exp(-0.5 * (V36/sigma6)**2)) * (1+jax.scipy.special.erf(alpha6*V36/sigma6/jnp.sqrt(2)))
+            G37 = (jnp.exp(-0.5 * (V37/sigma7)**2)) * (1+jax.scipy.special.erf(alpha7*V37/sigma7/jnp.sqrt(2)))
+            G38 = (jnp.exp(-0.5 * (V38/sigma8)**2)) * (1+jax.scipy.special.erf(alpha8*V38/sigma8/jnp.sqrt(2)))
+            G41 = (jnp.exp(-0.5 * (V41/sigma1)**2)) * (1+jax.scipy.special.erf(alpha1*V41/sigma1/jnp.sqrt(2)))
+            G42 = (jnp.exp(-0.5 * (V42/sigma2)**2)) * (1+jax.scipy.special.erf(alpha2*V42/sigma2/jnp.sqrt(2)))
+            G43 = (jnp.exp(-0.5 * (V43/sigma3)**2)) * (1+jax.scipy.special.erf(alpha3*V43/sigma3/jnp.sqrt(2)))
+            G44 = (jnp.exp(-0.5 * (V44/sigma4)**2)) * (1+jax.scipy.special.erf(alpha4*V44/sigma4/jnp.sqrt(2)))
+            G45 = (jnp.exp(-0.5 * (V45/sigma5)**2)) * (1+jax.scipy.special.erf(alpha5*V45/sigma5/jnp.sqrt(2)))
+            G46 = (jnp.exp(-0.5 * (V46/sigma6)**2)) * (1+jax.scipy.special.erf(alpha6*V46/sigma6/jnp.sqrt(2)))
+            G47 = (jnp.exp(-0.5 * (V47/sigma7)**2)) * (1+jax.scipy.special.erf(alpha7*V47/sigma7/jnp.sqrt(2)))
+            G48 = (jnp.exp(-0.5 * (V48/sigma8)**2)) * (1+jax.scipy.special.erf(alpha8*V48/sigma8/jnp.sqrt(2)))
+            D1 =((1-SR1*(1-jnp.exp(-A1 * G11/jnp.max(G11)))) * 
+                 (1-SR2*(1-jnp.exp(-A2 * G12/jnp.max(G12)))) * 
+                 (1-SR3*(1-jnp.exp(-A3 * G13/jnp.max(G13)))) * 
+                 (1-SR4*(1-jnp.exp(-A4 * G14/jnp.max(G14)))) * 
+                 (1-SR5*(1-jnp.exp(-A5 * G15/jnp.max(G15)))) * 
+                 (1-SR6*(1-jnp.exp(-A6 * G16/jnp.max(G16)))) * 
+                 (1-SR7*(1-jnp.exp(-A7 * G17/jnp.max(G17)))) * 
+                 (1-SR8*(1-jnp.exp(-A8 * G18/jnp.max(G18)))) * 
+                 poly1)
+            D2 =((1-SR1*(1-jnp.exp(-A1/R1 * G21/jnp.max(G21)))) * 
+                 (1-SR2*(1-jnp.exp(-A2/R2 * G22/jnp.max(G22)))) * 
+                 (1-SR3*(1-jnp.exp(-A3/R3 * G23/jnp.max(G23)))) * 
+                 (1-SR4*(1-jnp.exp(-A4/R4 * G24/jnp.max(G24)))) * 
+                 (1-SR5*(1-jnp.exp(-A5/R5 * G25/jnp.max(G25)))) * 
+                 (1-SR6*(1-jnp.exp(-A6/R6 * G26/jnp.max(G26)))) * 
+                 (1-SR7*(1-jnp.exp(-A7/R7 * G27/jnp.max(G27)))) * 
+                 (1-SR8*(1-jnp.exp(-A8/R8 * G28/jnp.max(G28)))) * 
+                 poly2)
+            D3 =((1-SR1*(1-jnp.exp(-A1/Q1 * G31/jnp.max(G31)))) * 
+                 (1-SR2*(1-jnp.exp(-A2/Q2 * G32/jnp.max(G32)))) * 
+                 (1-SR3*(1-jnp.exp(-A3/Q3 * G33/jnp.max(G33)))) * 
+                 (1-SR4*(1-jnp.exp(-A4/Q4 * G34/jnp.max(G34)))) * 
+                 (1-SR5*(1-jnp.exp(-A5/Q5 * G35/jnp.max(G35)))) * 
+                 (1-SR6*(1-jnp.exp(-A6/Q6 * G36/jnp.max(G36)))) * 
+                 (1-SR7*(1-jnp.exp(-A7/Q7 * G37/jnp.max(G37)))) * 
+                 (1-SR8*(1-jnp.exp(-A8/Q8 * G38/jnp.max(G38)))) * 
+                 poly3)
+            D4 =((1-SR1*(1-jnp.exp(-A1/T1 * G41/jnp.max(G41)))) * 
+                 (1-SR2*(1-jnp.exp(-A2/T2 * G42/jnp.max(G42)))) * 
+                 (1-SR3*(1-jnp.exp(-A3/T3 * G43/jnp.max(G43)))) * 
+                 (1-SR4*(1-jnp.exp(-A4/T4 * G44/jnp.max(G44)))) * 
+                 (1-SR5*(1-jnp.exp(-A5/T5 * G45/jnp.max(G45)))) * 
+                 (1-SR6*(1-jnp.exp(-A6/T6 * G46/jnp.max(G46)))) * 
+                 (1-SR7*(1-jnp.exp(-A7/T7 * G47/jnp.max(G47)))) * 
+                 (1-SR8*(1-jnp.exp(-A8/T8 * G48/jnp.max(G48)))) * 
+                 poly4)
+            D = jnp.concatenate([D1,D2,D3,D4])
+            return D.mean(axis=1)
+
     else:
         raise Exception(f'No model function defined for your case (nc={nc},nterms={nterms},abs={absorption})')
 
@@ -818,9 +1121,75 @@ def fit_lines(x,y,yerr,bounds,cpu_cores=4,oversample=10,progress_bar=True,nwarmu
             if predict:
                 numpyro.deterministic("model_spectrum", model_spectrum)
             numpyro.sample("obs", dist.Normal(loc=model_spectrum,scale=get_param_functions['beta']()*YERR), obs=Y)
+
+    elif nc > 1 and nterms == 3:
+        def numpyro_model(predict=False):
+            model_spectrum = line_model(x_supers,
+                                        c0=get_param_functions['c0'](),
+                                        c1=get_param_functions['c1'](),
+                                        c2=get_param_functions['c2'](),
+                                        c3=get_param_functions['c3'](),
+                                        d0=get_param_functions['d0'](),
+                                        d1=get_param_functions['d1'](),
+                                        d2=get_param_functions['d2'](),
+                                        d3=get_param_functions['d3'](),
+                                        e0=get_param_functions['e0'](),
+                                        e1=get_param_functions['e1'](),
+                                        e2=get_param_functions['e2'](),
+                                        e3=get_param_functions['e3'](),
+                                        dx1=get_param_functions['dx1'](),
+                                        dx2=get_param_functions['dx2'](),
+                        A1=get_param_functions['A1'](),mu1=get_param_functions['mu1'](),sigma1=get_param_functions['sigma1'](),alpha1=get_param_functions['alpha1'](),R1=get_param_functions['R1'](),Q1=get_param_functions['Q1'](),SR1=get_param_functions['SR1'](),
+                        A2=get_param_functions['A2'](),mu2=get_param_functions['mu2'](),sigma2=get_param_functions['sigma2'](),alpha2=get_param_functions['alpha2'](),R2=get_param_functions['R2'](),Q2=get_param_functions['Q2'](),SR2=get_param_functions['SR2'](),
+                        A3=get_param_functions['A3'](),mu3=get_param_functions['mu3'](),sigma3=get_param_functions['sigma3'](),alpha3=get_param_functions['alpha3'](),R3=get_param_functions['R3'](),Q3=get_param_functions['Q3'](),SR3=get_param_functions['SR3'](),
+                        A4=get_param_functions['A4'](),mu4=get_param_functions['mu4'](),sigma4=get_param_functions['sigma4'](),alpha4=get_param_functions['alpha4'](),R4=get_param_functions['R4'](),Q4=get_param_functions['Q4'](),SR4=get_param_functions['SR4'](),
+                        A5=get_param_functions['A5'](),mu5=get_param_functions['mu5'](),sigma5=get_param_functions['sigma5'](),alpha5=get_param_functions['alpha5'](),R5=get_param_functions['R5'](),Q5=get_param_functions['Q5'](),SR5=get_param_functions['SR5'](),                        
+                        A6=get_param_functions['A6'](),mu6=get_param_functions['mu6'](),sigma6=get_param_functions['sigma6'](),alpha6=get_param_functions['alpha6'](),R6=get_param_functions['R6'](),Q6=get_param_functions['Q6'](),SR6=get_param_functions['SR6'](),
+                        A7=get_param_functions['A7'](),mu7=get_param_functions['mu7'](),sigma7=get_param_functions['sigma7'](),alpha7=get_param_functions['alpha7'](),R7=get_param_functions['R7'](),Q7=get_param_functions['Q7'](),SR7=get_param_functions['SR7'](),
+                        A8=get_param_functions['A8'](),mu8=get_param_functions['mu8'](),sigma8=get_param_functions['sigma8'](),alpha8=get_param_functions['alpha8'](),R8=get_param_functions['R8'](),Q8=get_param_functions['Q8'](),SR8=get_param_functions['SR8']())
+            if predict:
+                numpyro.deterministic("model_spectrum", model_spectrum)
+            numpyro.sample("obs", dist.Normal(loc=model_spectrum,scale=get_param_functions['beta']()*YERR), obs=Y)
+
+    elif nc > 1 and nterms == 4:
+        def numpyro_model(predict=False):
+            model_spectrum = line_model(x_supers,
+                                        c0=get_param_functions['c0'](),
+                                        c1=get_param_functions['c1'](),
+                                        c2=get_param_functions['c2'](),
+                                        c3=get_param_functions['c3'](),
+                                        d0=get_param_functions['d0'](),
+                                        d1=get_param_functions['d1'](),
+                                        d2=get_param_functions['d2'](),
+                                        d3=get_param_functions['d3'](),
+                                        e0=get_param_functions['e0'](),
+                                        e1=get_param_functions['e1'](),
+                                        e2=get_param_functions['e2'](),
+                                        e3=get_param_functions['e3'](),
+                                        f0=get_param_functions['f0'](),
+                                        f1=get_param_functions['f1'](),
+                                        f2=get_param_functions['f2'](),
+                                        f3=get_param_functions['f3'](),
+                                        dx1=get_param_functions['dx1'](),
+                                        dx2=get_param_functions['dx2'](),
+                                        dx3=get_param_functions['dx3'](),
+                        A1=get_param_functions['A1'](),mu1=get_param_functions['mu1'](),sigma1=get_param_functions['sigma1'](),alpha1=get_param_functions['alpha1'](),R1=get_param_functions['R1'](),Q1=get_param_functions['Q1'](),T1=get_param_functions['T1'](),SR1=get_param_functions['SR1'](),
+                        A2=get_param_functions['A2'](),mu2=get_param_functions['mu2'](),sigma2=get_param_functions['sigma2'](),alpha2=get_param_functions['alpha2'](),R2=get_param_functions['R2'](),Q2=get_param_functions['Q2'](),T2=get_param_functions['T2'](),SR2=get_param_functions['SR2'](),
+                        A3=get_param_functions['A3'](),mu3=get_param_functions['mu3'](),sigma3=get_param_functions['sigma3'](),alpha3=get_param_functions['alpha3'](),R3=get_param_functions['R3'](),Q3=get_param_functions['Q3'](),T3=get_param_functions['T3'](),SR3=get_param_functions['SR3'](),
+                        A4=get_param_functions['A4'](),mu4=get_param_functions['mu4'](),sigma4=get_param_functions['sigma4'](),alpha4=get_param_functions['alpha4'](),R4=get_param_functions['R4'](),Q4=get_param_functions['Q4'](),T4=get_param_functions['T4'](),SR4=get_param_functions['SR4'](),
+                        A5=get_param_functions['A5'](),mu5=get_param_functions['mu5'](),sigma5=get_param_functions['sigma5'](),alpha5=get_param_functions['alpha5'](),R5=get_param_functions['R5'](),Q5=get_param_functions['Q5'](),T5=get_param_functions['T5'](),SR5=get_param_functions['SR5'](),                        
+                        A6=get_param_functions['A6'](),mu6=get_param_functions['mu6'](),sigma6=get_param_functions['sigma6'](),alpha6=get_param_functions['alpha6'](),R6=get_param_functions['R6'](),Q6=get_param_functions['Q6'](),T6=get_param_functions['T6'](),SR6=get_param_functions['SR6'](),
+                        A7=get_param_functions['A7'](),mu7=get_param_functions['mu7'](),sigma7=get_param_functions['sigma7'](),alpha7=get_param_functions['alpha7'](),R7=get_param_functions['R7'](),Q7=get_param_functions['Q7'](),T7=get_param_functions['T7'](),SR7=get_param_functions['SR7'](),
+                        A8=get_param_functions['A8'](),mu8=get_param_functions['mu8'](),sigma8=get_param_functions['sigma8'](),alpha8=get_param_functions['alpha8'](),R8=get_param_functions['R8'](),Q8=get_param_functions['Q8'](),T8=get_param_functions['T8'](),SR8=get_param_functions['SR8']())
+            if predict:
+                numpyro.deterministic("model_spectrum", model_spectrum)
+            numpyro.sample("obs", dist.Normal(loc=model_spectrum,scale=get_param_functions['beta']()*YERR), obs=Y)
     else:
         raise Exception(f'No numpyro model defined for your case (nc={nc},nterms={nterms},abs={absorption}).')
     
+
+
+
 
 
 
@@ -852,6 +1221,8 @@ def fit_lines(x,y,yerr,bounds,cpu_cores=4,oversample=10,progress_bar=True,nwarmu
         low_1, mid_1, high_1 = np.percentile(pred['model_spectrum'], 100 * norm.cdf([-1, 0,1]), axis=0)
         low_2, mid_2, high_2 = np.percentile(pred['model_spectrum'], 100 * norm.cdf([-2, 0,2]), axis=0)
         low_3, mid_3, high_3 = np.percentile(pred['model_spectrum'], 100 * norm.cdf([-3, 0,3]), axis=0)
+
+
         fig,ax = plt.subplots(1,len(x),figsize=(14,5))
         if len(x) == 1:
             ax=[ax,0]
@@ -863,6 +1234,12 @@ def fit_lines(x,y,yerr,bounds,cpu_cores=4,oversample=10,progress_bar=True,nwarmu
                         ax[i].axvline(linecenter,alpha=0.5,color=f'C{j-1}')
                     if i == 1:
                         offset = np.median(samples['dx1'])
+                        ax[i].axvline(linecenter+offset,alpha=0.5,color=f'C{j-1}')
+                    if i == 2:
+                        offset = np.median(samples['dx2'])
+                        ax[i].axvline(linecenter+offset,alpha=0.5,color=f'C{j-1}')
+                    if i == 3:
+                        offset = np.median(samples['dx3'])
                         ax[i].axvline(linecenter+offset,alpha=0.5,color=f'C{j-1}')
                 except:
                     pass
@@ -909,12 +1286,13 @@ def drs(samples):
 
 
 ### TO DEMONSTRATE THAT THIS CODE WORKS.
-def test(nc=1,nterms=1,absorption=True,cpu_cores = 3):
+def test(nc=1,nterms=1,absorption=True,cpu_cores = 3,pass_supers=False):
     setup_numpyro(cpu_cores)
 
     import numpy.random
     import matplotlib.pyplot as plt
     import numpy as np
+    import pdb
     noise = 0.02
     sigma = 15.0
     alpha = 0.0
@@ -923,21 +1301,33 @@ def test(nc=1,nterms=1,absorption=True,cpu_cores = 3):
     c2 = 0.0
     c3 = 0.0
 
+
     x1 = np.arange(579.80,581.2,0.01)
     x2 = np.arange(min(x1)+3,max(x1)+3,0.008)
-    xs1 = supersample(x1)    
-    xs2 = supersample(x2)
+    x3 = x1*1.0
+    x4 = x2-0.5
+    xs1 = supersample(x1,f=5)    
+    xs2 = supersample(x2,f=5)
+    xs3 = supersample(x3,f=5)    
+    xs4 = supersample(x4,f=5)
     yerr1 = np.zeros_like(x1)+noise
     yerr2 = np.zeros_like(x2)+noise
-
+    yerr3 = np.zeros_like(x3)+noise
+    yerr4 = np.zeros_like(x4)+noise
     if nc == 1: #Case of only one line/line system.
         A1 = 4.0
         mu1 = 580.5
         A2 = A1/2.0
         mu2 = 583.5
         SR = 1.0
+        A3 = A1*1.0
+        mu3 = mu1*1.0
+        A4 = A1/3.0
+        mu4 = 583.0
         y1 = gaussian_skewed(xs1,A1=A1,mu1=mu1,sigma1=sigma,alpha1=alpha,SR1=SR,c0=c0,c1=c1,c2=c2,c3=c3,absorption=absorption)+numpy.random.normal(scale=noise,size=len(x1))
         y2 = gaussian_skewed(xs2,A1=A2,mu1=mu2,sigma1=sigma,alpha1=alpha,SR1=SR,c0=c0,c1=c1,c2=c2,c3=c3,absorption=absorption)+numpy.random.normal(scale=noise,size=len(x2))
+        y3 = gaussian_skewed(xs3,A1=A3,mu1=mu3,sigma1=sigma,alpha1=alpha,SR1=SR,c0=c0,c1=c1,c2=c2,c3=c3,absorption=absorption)+numpy.random.normal(scale=noise,size=len(x1))
+        y4 = gaussian_skewed(xs4,A1=A4,mu1=mu4,sigma1=sigma,alpha1=alpha,SR1=SR,c0=c0,c1=c1,c2=c2,c3=c3,absorption=absorption)+numpy.random.normal(scale=noise,size=len(x2))
         bounds = {}
         bounds['beta'] = [0.5,2.0]
         bounds['A1'] = [0,8]
@@ -952,14 +1342,27 @@ def test(nc=1,nterms=1,absorption=True,cpu_cores = 3):
         bounds['c1'] = [-1e-2,1e-2]
         bounds['c2'] = [-1e-4,1e-4]
         bounds['c3'] = [-1e-6,1e-6]
-        if nterms == 2:#... in two wl slices.
+        if nterms >= 2:#... in two wl slices.
             bounds['d0'] = [0.9,1.1]
             bounds['d1'] = [-1e-2,1e-2]
             bounds['d2'] = [-1e-4,1e-4]
             bounds['d3'] = [-1e-6,1e-6]
             bounds['R1'] = [0.25,4]
             bounds['dx1'] = [3-0.05,3+0.05]
-
+        if nterms >= 3:#... in three wl slices.
+            bounds['e0'] = [0.9,1.1]
+            bounds['e1'] = [-1e-2,1e-2]
+            bounds['e2'] = [-1e-4,1e-4]
+            bounds['e3'] = [-1e-6,1e-6]
+            bounds['Q1'] = [0.25,4]
+            bounds['dx2'] = [-0.05,0.05]
+        if nterms == 4:#... in three wl slices.
+            bounds['f0'] = [0.9,1.1]
+            bounds['f1'] = [-1e-2,1e-2]
+            bounds['f2'] = [-1e-4,1e-4]
+            bounds['f3'] = [-1e-6,1e-6]
+            bounds['T1'] = [0.25,4]
+            bounds['dx3'] = [2.5-0.05,2.5+0.05]
 
     if nc == 3: #If there are 3 line systems.
         A11 = 0.8
@@ -974,6 +1377,20 @@ def test(nc=1,nterms=1,absorption=True,cpu_cores = 3):
         mu22 = mu12+3
         A23 = A13/2
         mu23 = mu13+3
+
+        A31 = A11*1.0
+        mu31 = mu11*1.0
+        A32 = A12*1.0
+        mu32 = mu12*1.0
+        A33 = A13*1.0
+        mu33 = mu13*1.0
+        A41 = A11/3
+        mu41 = mu11+2.5
+        A42 = A12/3
+        mu42 = mu12+2.5
+        A43 = A13/3
+        mu43 = mu13+2.5
+
 
         SR1 = 0.5
         SR2 = 1.0
@@ -1004,7 +1421,7 @@ def test(nc=1,nterms=1,absorption=True,cpu_cores = 3):
             bounds['SR2'] = [1,1]
             bounds['SR3'] = [1,1]    
 
-        if nterms == 2:
+        if nterms >= 2:
             bounds['d0'] = [0.9,1.1]
             bounds['d1'] = [-1e-2,1e-2]
             bounds['d2'] = [-1e-4,1e-4]
@@ -1013,8 +1430,28 @@ def test(nc=1,nterms=1,absorption=True,cpu_cores = 3):
             bounds['R2'] = [0.25,4]
             bounds['R3'] = [0.25,4]
             bounds['dx1'] = [3-0.05,3+0.05]
+        if nterms >= 3:
+            bounds['e0'] = [0.9/2,1.1/2]
+            bounds['e1'] = [-1e-2,1e-2]
+            bounds['e2'] = [-1e-4,1e-4]
+            bounds['e3'] = [-1e-6,1e-6]
+            bounds['Q1'] = [0.25,4]
+            bounds['Q2'] = [0.25,4]
+            bounds['Q3'] = [0.25,4]
+            bounds['dx2'] = [-0.05,0.05]
+        if nterms >= 4:
+            bounds['f0'] = [0.9,1.1]
+            bounds['f1'] = [-1e-2,1e-2]
+            bounds['f2'] = [-1e-4,1e-4]
+            bounds['f3'] = [-1e-6,1e-6]
+            bounds['T1'] = [0.1,2]
+            bounds['T2'] = [0.1,2]
+            bounds['T3'] = [0.1,2]
+            bounds['dx3'] = [2.5-0.05,2.5+0.05]
         y1 = gaussian_skewed(xs1,A1=A11,mu1=mu11,sigma1=sigma,alpha1=alpha,A2=A12,mu2=mu12,sigma2=sigma,alpha2=alpha,A3=A13,mu3=mu13,sigma3=sigma,alpha3=alpha,SR1=SR1,SR2=SR2,SR3=SR3,c0=c0,c1=c1,c2=c2,c3=c3,absorption=absorption)+numpy.random.normal(scale=noise,size=len(x1))
         y2 = gaussian_skewed(xs2,A1=A21,mu1=mu21,sigma1=sigma,alpha1=alpha,A2=A22,mu2=mu22,sigma2=sigma,alpha2=alpha,A3=A23,mu3=mu23,sigma3=sigma,alpha3=alpha,SR1=SR1,SR2=SR2,SR3=SR3,c0=c0,c1=c1,c2=c2,c3=c3,absorption=absorption)+numpy.random.normal(scale=noise,size=len(x2))
+        y3 = gaussian_skewed(xs3,A1=A31,mu1=mu31,sigma1=sigma,alpha1=alpha,A2=A32,mu2=mu32,sigma2=sigma,alpha2=alpha,A3=A33,mu3=mu33,sigma3=sigma,alpha3=alpha,SR1=SR1,SR2=SR2,SR3=SR3,c0=c0/2,c1=c1,c2=c2,c3=c3,absorption=absorption)+numpy.random.normal(scale=noise*np.sqrt(2),size=len(x1))
+        y4 = gaussian_skewed(xs4,A1=A41,mu1=mu41,sigma1=sigma,alpha1=alpha,A2=A42,mu2=mu42,sigma2=sigma,alpha2=alpha,A3=A43,mu3=mu43,sigma3=sigma,alpha3=alpha,SR1=SR1,SR2=SR2,SR3=SR3,c0=c0,c1=c1,c2=c2,c3=c3,absorption=absorption)+numpy.random.normal(scale=noise,size=len(x2))
 
     if nc == 6:
         A11 = 2.0
@@ -1237,15 +1674,43 @@ def test(nc=1,nterms=1,absorption=True,cpu_cores = 3):
 
     if nterms==1:
         plt.errorbar(x1,y1,yerr=yerr1,color='black')
-        plt.title('Data to to fit') 
-        plt.show()  
-        fit_lines([x1],[y1],[yerr1],bounds,cpu_cores=cpu_cores,oversample=5,absorption=absorption,progress_bar=True,nwarmup=800,nsamples=400)
+        plt.title('Data to fit') 
+        plt.show()
+        if pass_supers:
+            fit_lines([xs1],[y1],[yerr1],bounds,cpu_cores=cpu_cores,oversample=5,absorption=absorption,progress_bar=True,nwarmup=400,nsamples=200,pass_supers=True)
+        else:  
+            fit_lines([x1],[y1],[yerr1],bounds,cpu_cores=cpu_cores,oversample=5,absorption=absorption,progress_bar=True,nwarmup=400,nsamples=400,pass_supers=False)
     if nterms==2:
         fig,ax = plt.subplots(1,2,figsize=(14,5),sharey=True)
 
         ax[0].errorbar(x1,y1,yerr=yerr1,color='black')
         ax[1].errorbar(x2,y2,yerr=yerr2,color='black')
-        ax[0].set_title('Data to to fit')
+        ax[0].set_title('Data to fit')
         ax[1].set_title('Data to fit')
         plt.show()
-        fit_lines([x1,x2],[y1,y2],[yerr1,yerr2],bounds,cpu_cores=cpu_cores,oversample=5,absorption=absorption,progress_bar=True,nwarmup=800,nsamples=400)
+        fit_lines([x1,x2],[y1,y2],[yerr1,yerr2],bounds,cpu_cores=cpu_cores,oversample=5,absorption=absorption,progress_bar=True,nwarmup=400,nsamples=200)
+
+    if nterms==3:
+        fig,ax = plt.subplots(1,3,figsize=(14,5),sharey=True)
+
+        ax[0].errorbar(x1,y1,yerr=yerr1,color='black')
+        ax[1].errorbar(x2,y2,yerr=yerr2,color='black')
+        ax[2].errorbar(x3,y3,yerr=yerr3,color='black')
+        ax[0].set_title('Data to fit')
+        ax[1].set_title('Data to fit')
+        ax[2].set_title('Data to fit')
+        plt.show()
+        fit_lines([x1,x2,x3],[y1,y2,y3],[yerr1,yerr2,yerr3],bounds,cpu_cores=cpu_cores,oversample=5,absorption=absorption,progress_bar=True,nwarmup=400,nsamples=200)
+
+    if nterms==4:
+        fig,ax = plt.subplots(2,2,figsize=(14,5),sharey=True)
+
+        ax[0][0].errorbar(x1,y1,yerr=yerr1,color='black')
+        ax[0][1].errorbar(x2,y2,yerr=yerr2,color='black')
+        ax[1][0].errorbar(x3,y3,yerr=yerr3,color='black')
+        ax[1][1].errorbar(x4,y4,yerr=yerr4,color='black')
+        for a in ax.flatten():
+            a.set_title('Data to fit')
+        plt.show()
+
+        fit_lines([x1,x2,x3,x4],[y1,y2,y3,y4],[yerr1,yerr2,yerr3,yerr4],bounds,cpu_cores=cpu_cores,oversample=5,absorption=absorption,progress_bar=True,nwarmup=400,nsamples=200)
