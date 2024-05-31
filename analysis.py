@@ -1,5 +1,99 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from data import read_order
+
+
+def find_spectra_in_mjd(inpath_1,mjd_target,ignore_empty=False):
+    """
+    This finds all spectra taken within a 24h time interval counted from an mjd date in the saved h5 file,
+    and returns their filenames sorted in mjd. It returns an error in case no files are found for the
+    requested mjd.
+    """
+    wl,fx,fxt,err,filelist,mjd,exptime,berv = read_order(0,inpath_1,px_range=[0,2])
+    sel = (mjd>mjd_target)&(mjd<mjd_target+1)
+    filelist_to_return = filelist[sel]
+
+    if not ignore_empty and len(filelist_to_return) == 0:
+        raise Exception(f"No files found for mjd = {mjd_target}")
+    for i in range(len(filelist_to_return)):
+        filelist_to_return[i] = filelist_to_return[i].decode('utf-8')
+    return(filelist_to_return[np.argsort(mjd[sel])])
+
+def load_spectrum_for_fitting(inpath_1,filename,wlcs,drvmin=-100,drvmax=100,vsys=0.0):
+    from data import test_exists
+    from fitting import fit_lines,supersample, gaussian_skewed, get_bestfit_params,setup_numpyro
+    import sys
+    import matplotlib.pyplot as plt
+    import numpy as np
+    from pathlib import Path
+    import math
+    from matplotlib.backends.backend_pdf import PdfPages
+    import pdb
+    from tqdm import tqdm
+    import astropy.constants as const
+    from numpy.random import uniform
+
+    inpath_1 = Path(str(sys.argv[1]))
+    test_exists(inpath_1)
+
+
+    c = const.c.to('km/s').value
+
+    drv = np.max(np.abs([drvmin,drvmax]))
+
+
+    wl1,RV1,orders_norm1,orders_norm_t1,err1,filelist1,mjd1,t_exp1,berv1,orders_returned1,px_lims_returned1 = load_order_RV_range(inpath_1,wlc1*(1+vsys/c),drv+33)#33 km/s of padding is added because we will still be BERV correcting and 33km/s is the maximum possible BERV.
+    wl2,RV2,orders_norm2,orders_norm_t2,err2,filelist2,mjd2,t_exp2,berv2,orders_returned2,px_lims_returned2 = load_order_RV_range(inpath_1,wlc2*(1+vsys/c),drv+33)
+
+    sel = (filelist1 == filename)#(mjd1>M)&(mjd1<M+1)
+
+
+    pdb.set_trace()
+
+
+    #This is written to extract down from the data the spectrum that we need to fit, dealing with order overlap:
+    wl1_out,RV1_out,orders_norm1_out,orders_norm_t1_out,err1_out = [],[],[],[],[]
+    wl2_out,RV2_out,orders_norm2_out,orders_norm_t2_out,err2_out = [],[],[],[],[]
+    for i in range(len(orders_returned1)):
+        wl1_out.append(wl1[i][sel])
+        RV1_out.append(RV1[i][sel])
+        orders_norm1_out.append(orders_norm1[i][sel])
+        orders_norm_t1_out.append(orders_norm_t1[i][sel])
+        err1_out.append(err1[i][sel])
+
+    for i in range(len(orders_returned2)):
+        wl2_out.append(wl2[i][sel])
+        RV2_out.append(RV2[i][sel])
+        orders_norm2_out.append(orders_norm2[i][sel])
+        orders_norm_t2_out.append(orders_norm_t2[i][sel])
+        err2_out.append(err2[i][sel])
+
+    #Now we down-select to the spectrum that we want on the RV range that we want.
+    xs1,y1,yerr1,v1 = [],[],[],[]
+    for i in range(len(orders_returned1)):
+        wl_sel = (RV1_out[i][N]>drvmin)&(RV1_out[i][N]<drvmax)
+        v1.append(RV1_out[i][N][wl_sel])
+        xs1.append(supersample(wl1_out[i][N][wl_sel],f=oversampling))
+        y1.append(orders_norm1_out[i][N][wl_sel])
+        yerr1.append(err1_out[i][N][wl_sel])
+    v1_c = np.concatenate(v1)
+    xs1_c = np.concatenate(xs1,axis=0)
+    y1_c = np.concatenate(y1)
+    yerr1_c = np.concatenate(yerr1)
+    xs2,y2,yerr2,v2 = [],[],[],[]
+    for i in range(len(orders_returned2)):
+        wl_sel = (RV2_out[i][N]>drvmin)&(RV2_out[i][N]<drvmax)
+        v2.append(RV2_out[i][N][wl_sel])
+        xs2.append(supersample(wl2_out[i][N][wl_sel],f=oversampling))
+        y2.append(orders_norm2_out[i][N][wl_sel])
+        yerr2.append(err2_out[i][N][wl_sel])
+    v2_c = np.concatenate(v2)
+    xs2_c = np.concatenate(xs2,axis=0)
+    y2_c = np.concatenate(y2)
+    yerr2_c = np.concatenate(yerr2)
+
+
+
 
 
 def load_order_RV_range(inpath,wlc,RV,norm=True,bervcor=True):
@@ -54,10 +148,10 @@ def load_order_RV_range(inpath,wlc,RV,norm=True,bervcor=True):
     for i,n in enumerate(orders_to_return): #Can actually only be two, but OK.
         wl,fx,fxt,err,filelist,mjd,exptime,berv = read_order(n,inpath,px_range=px_lims_to_return[i])
 
-        if norm:
-            meanflux = np.mean(fx,axis=1)
-        else:
-            meanflux = 1.0
+        # if norm:
+        #     meanflux = np.mean(fx,axis=1)
+        # else:
+        #     meanflux = 1.0
         if bervcor:
             gamma = 1+(berv/c)
         else:
@@ -77,6 +171,7 @@ def load_order_RV_range(inpath,wlc,RV,norm=True,bervcor=True):
         for i in range(len(out_fx)):
             out_fx[i]=(out_fx[i].T/meanflux).T
             out_fxt[i]=(out_fxt[i].T/meanflux).T
+            out_err[i]=(out_err[i].T/meanflux).T
     return(out_wl,out_RV,out_fx,out_fxt,out_err,filelist,mjd,exptime,berv,orders_to_return,px_lims_to_return)
 
 
