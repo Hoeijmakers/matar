@@ -1,7 +1,14 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from data import read_order
+from data import test_exists
+from fitting import supersample
 
+from matplotlib.backends.backend_pdf import PdfPages
+import pdb
+from tqdm import tqdm
+import astropy.constants as const
+from numpy.random import uniform
 
 def find_spectra_in_mjd(inpath_1,mjd_target,ignore_empty=False):
     """
@@ -19,21 +26,14 @@ def find_spectra_in_mjd(inpath_1,mjd_target,ignore_empty=False):
         filelist_to_return[i] = filelist_to_return[i].decode('utf-8')
     return(filelist_to_return[np.argsort(mjd[sel])])
 
-def load_spectrum_for_fitting(inpath_1,filename,wlcs,drvmin=-100,drvmax=100,vsys=0.0):
-    from data import test_exists
-    from fitting import fit_lines,supersample, gaussian_skewed, get_bestfit_params,setup_numpyro
-    import sys
-    import matplotlib.pyplot as plt
-    import numpy as np
-    from pathlib import Path
-    import math
-    from matplotlib.backends.backend_pdf import PdfPages
-    import pdb
-    from tqdm import tqdm
-    import astropy.constants as const
-    from numpy.random import uniform
+def load_spectrum_for_fitting(inpath_1,filename,wlcs,drvmin=-100,drvmax=100,vsys=0.0,oversampling=5):
+    """
+    This loads spectrum segments for fitting. wlcs contains a list of center wavelengths plusminus
+    a velocity range drvmin-drvmax. The script then proceeds to pull those ranges out of the spectrum
+    file, taking into account the possibiity that this data may exist at an order edge.
+    """
 
-    inpath_1 = Path(str(sys.argv[1]))
+
     test_exists(inpath_1)
 
 
@@ -41,56 +41,68 @@ def load_spectrum_for_fitting(inpath_1,filename,wlcs,drvmin=-100,drvmax=100,vsys
 
     drv = np.max(np.abs([drvmin,drvmax]))
 
+    v_out,xs_out,y_out,yerr_out,orders_ret = [],[],[],[],[]
+    for wlc in wlcs:
+        wl1,RV1,orders_norm1,orders_norm_t1,err1,filelist1,mjd1,t_exp1,berv1,orders_returned1,px_lims_returned1 = load_order_RV_range(inpath_1,wlc*(1+vsys/c),drv+33)#33 km/s of padding is added because we will still be BERV correcting and 33km/s is the maximum possible BERV.
+    # wl2,RV2,orders_norm2,orders_norm_t2,err2,filelist2,mjd2,t_exp2,berv2,orders_returned2,px_lims_returned2 = load_order_RV_range(inpath_1,wlc2*(1+vsys/c),drv+33)
 
-    wl1,RV1,orders_norm1,orders_norm_t1,err1,filelist1,mjd1,t_exp1,berv1,orders_returned1,px_lims_returned1 = load_order_RV_range(inpath_1,wlc1*(1+vsys/c),drv+33)#33 km/s of padding is added because we will still be BERV correcting and 33km/s is the maximum possible BERV.
-    wl2,RV2,orders_norm2,orders_norm_t2,err2,filelist2,mjd2,t_exp2,berv2,orders_returned2,px_lims_returned2 = load_order_RV_range(inpath_1,wlc2*(1+vsys/c),drv+33)
+        if wlc == wlcs[0]: #Only determine this the first time.
+            sel,j = [None,0]
 
-    sel = (filelist1 == filename)#(mjd1>M)&(mjd1<M+1)
+        for f in filelist1:
+            if f.decode('utf-8') == filename:
+                sel = j
+            j+=j
+    
+        if sel is None:
+            raise Exception(f'{filename} not found in {inpath_1}')
 
 
-    pdb.set_trace()
+        #This is written to extract down from the data the spectrum that we need to fit, dealing with order overlap:
+        wl1_out,RV1_out,orders_norm1_out,orders_norm_t1_out,err1_out = [],[],[],[],[]
+        # wl2_out,RV2_out,orders_norm2_out,orders_norm_t2_out,err2_out = [],[],[],[],[]
+        for i in range(len(orders_returned1)):
+            wl1_out.append(wl1[i][sel])
+            RV1_out.append(RV1[i][sel])
+            orders_norm1_out.append(orders_norm1[i][sel])
+            orders_norm_t1_out.append(orders_norm_t1[i][sel])
+            err1_out.append(err1[i][sel])
+
+        #Now we down-select to the spectrum that we want on the RV range that we want.
+        xs1,y1,yerr1,v1 = [],[],[],[]
+        for i in range(len(orders_returned1)):
+            wl_sel = (RV1_out[i]>drvmin)&(RV1_out[i]<drvmax)
+            v1.append(RV1_out[i][wl_sel])
+            xs1.append(supersample(wl1_out[i][wl_sel],f=oversampling))
+            y1.append(orders_norm1_out[i][wl_sel])
+            yerr1.append(err1_out[i][wl_sel])
+
+        v_out.append(v1)
+        xs_out.append(xs1)
+        y_out.append(y1)
+        yerr_out.append(yerr1)
+        orders_ret.append(orders_returned1)
+    return(v_out,xs_out,y_out,yerr_out,orders_ret)
+    
 
 
-    #This is written to extract down from the data the spectrum that we need to fit, dealing with order overlap:
-    wl1_out,RV1_out,orders_norm1_out,orders_norm_t1_out,err1_out = [],[],[],[],[]
-    wl2_out,RV2_out,orders_norm2_out,orders_norm_t2_out,err2_out = [],[],[],[],[]
-    for i in range(len(orders_returned1)):
-        wl1_out.append(wl1[i][sel])
-        RV1_out.append(RV1[i][sel])
-        orders_norm1_out.append(orders_norm1[i][sel])
-        orders_norm_t1_out.append(orders_norm_t1[i][sel])
-        err1_out.append(err1[i][sel])
-
-    for i in range(len(orders_returned2)):
-        wl2_out.append(wl2[i][sel])
-        RV2_out.append(RV2[i][sel])
-        orders_norm2_out.append(orders_norm2[i][sel])
-        orders_norm_t2_out.append(orders_norm_t2[i][sel])
-        err2_out.append(err2[i][sel])
-
-    #Now we down-select to the spectrum that we want on the RV range that we want.
-    xs1,y1,yerr1,v1 = [],[],[],[]
-    for i in range(len(orders_returned1)):
-        wl_sel = (RV1_out[i][N]>drvmin)&(RV1_out[i][N]<drvmax)
-        v1.append(RV1_out[i][N][wl_sel])
-        xs1.append(supersample(wl1_out[i][N][wl_sel],f=oversampling))
-        y1.append(orders_norm1_out[i][N][wl_sel])
-        yerr1.append(err1_out[i][N][wl_sel])
-    v1_c = np.concatenate(v1)
-    xs1_c = np.concatenate(xs1,axis=0)
-    y1_c = np.concatenate(y1)
-    yerr1_c = np.concatenate(yerr1)
-    xs2,y2,yerr2,v2 = [],[],[],[]
-    for i in range(len(orders_returned2)):
-        wl_sel = (RV2_out[i][N]>drvmin)&(RV2_out[i][N]<drvmax)
-        v2.append(RV2_out[i][N][wl_sel])
-        xs2.append(supersample(wl2_out[i][N][wl_sel],f=oversampling))
-        y2.append(orders_norm2_out[i][N][wl_sel])
-        yerr2.append(err2_out[i][N][wl_sel])
-    v2_c = np.concatenate(v2)
-    xs2_c = np.concatenate(xs2,axis=0)
-    y2_c = np.concatenate(y2)
-    yerr2_c = np.concatenate(yerr2)
+    # for i in range(len(orders_returned2)):
+    #     wl2_out.append(wl2[i][sel])
+    #     RV2_out.append(RV2[i][sel])
+    #     orders_norm2_out.append(orders_norm2[i][sel])
+    #     orders_norm_t2_out.append(orders_norm_t2[i][sel])
+    #     err2_out.append(err2[i][sel])
+    # xs2,y2,yerr2,v2 = [],[],[],[]
+    # for i in range(len(orders_returned2)):
+    #     wl_sel = (RV2_out[i][N]>drvmin)&(RV2_out[i][N]<drvmax)
+    #     v2.append(RV2_out[i][N][wl_sel])
+    #     xs2.append(supersample(wl2_out[i][N][wl_sel],f=oversampling))
+    #     y2.append(orders_norm2_out[i][N][wl_sel])
+    #     yerr2.append(err2_out[i][N][wl_sel])
+    # v2_c = np.concatenate(v2)
+    # xs2_c = np.concatenate(xs2,axis=0)
+    # y2_c = np.concatenate(y2)
+    # yerr2_c = np.concatenate(yerr2)
 
 
 
