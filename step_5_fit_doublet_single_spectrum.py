@@ -49,33 +49,45 @@ if __name__ == "__main__":
     if outpath.exists() == False:
         os.makedirs(outpath)
 
+
+
     filelist = find_spectra_in_mjd(inpath_1,mjd_target,ignore_empty=False)
-    v_out,xs_out,y_out,yerr_out,orders_ret,mjd_ret = load_spectrum_for_fitting(inpath_1,filelist[N],[wlc1,wlc2],drvmin=drvmin,drvmax=drvmax,vsys=vsys,oversampling=5)
 
     bounds = read_prior(inpath_3)
-
-    x_in,y_in,yerr_in = [],[],[]#In, for what goes into the fitting routine.
-    for i in range(len(xs_out)):
-        for j in range(len(xs_out[i])):
-            x_in.append(     xs_out[i][j])
-            y_in.append(      y_out[i][j])           
-            yerr_in.append(yerr_out[i][j])
-
-    samples,model = fit_lines(x_in,y_in,yerr_in,bounds,cpu_cores=cpu_cores,oversample=5,absorption=True,progress_bar=True,nwarmup=nwarmup,nsamples=nsamples,pass_supers=True,plotname='test',plot=plot_trigger)
+    if N > -1:
+        filelist = [filelist[N]]
+    else:
+        plot_trigger = False
 
 
+    for n,F in enumerate(filelist):
+        if len(filelist)>1:
+            print(f'fitting file {n} of {len(filelist)-1}')
+        v_out,xs_out,y_out,yerr_out,orders_ret,mjd_ret = load_spectrum_for_fitting(inpath_1,F,[wlc1,wlc2],drvmin=drvmin,drvmax=drvmax,vsys=vsys,oversampling=oversampling)
+    
 
-    #Now we proceed to shape the data to save it.
+        x_in,y_in,yerr_in = [],[],[]#In, for what goes into the fitting routine.
+        for i in range(len(xs_out)):
+            for j in range(len(xs_out[i])):
+                x_in.append(     xs_out[i][j])
+                y_in.append(      y_out[i][j])           
+                yerr_in.append(yerr_out[i][j])
 
-    dataslices=[]
-    for i in range(len(x_in)):
-        D = np.zeros((3,len(y_in[i])))
-        D[0]=x_in[i].mean(axis=1)
-        D[1]=y_in[i]
-        D[2]=yerr_in[i]
-        dataslices.append(D)
+        samples,model = fit_lines(x_in,y_in,yerr_in,bounds,cpu_cores=cpu_cores,oversample=5,absorption=True,progress_bar=True,nwarmup=nwarmup,nsamples=nsamples,pass_supers=True,plotname='test',plot=plot_trigger)
 
-    save_fit_output(outpath/(Path(filelist[N]).stem+'.nc'),samples,dataslices,attrs={'mjd':mjd_ret})
+
+
+        #Now we proceed to shape the data to save it.
+
+        dataslices=[]
+        for i in range(len(x_in)):
+            D = np.zeros((3,len(y_in[i])))
+            D[0]=x_in[i].mean(axis=1)
+            D[1]=y_in[i]
+            D[2]=yerr_in[i]
+            dataslices.append(D)
+
+        save_fit_output(outpath/(Path(F).stem+'.nc'),samples,dataslices,attrs={'mjd':mjd_ret})
 
 
     # p,e = get_bestfit_params(samples)
