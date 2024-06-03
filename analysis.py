@@ -31,6 +31,9 @@ def load_spectrum_for_fitting(inpath_1,filename,wlcs,drvmin=-100,drvmax=100,vsys
     This loads spectrum segments for fitting. wlcs contains a list of center wavelengths plusminus
     a velocity range drvmin-drvmax. The script then proceeds to pull those ranges out of the spectrum
     file, taking into account the possibiity that this data may exist at an order edge.
+
+
+    The output are lists (with the same length as wlcs) of the velocity, super-sampled wl, spectrum and error axes, and which orders were returned.
     """
 
 
@@ -49,15 +52,15 @@ def load_spectrum_for_fitting(inpath_1,filename,wlcs,drvmin=-100,drvmax=100,vsys
         if wlc == wlcs[0]: #Only determine this the first time.
             sel,j = [None,0]
 
-        for f in filelist1:
-            if f.decode('utf-8') == filename:
-                sel = j
-            j+=j
+            for f in filelist1:
+                if f.decode('utf-8') == filename:
+                    sel = int(j*1.0)
+                j+=1
     
         if sel is None:
             raise Exception(f'{filename} not found in {inpath_1}')
 
-
+        mjd_ret = mjd1[sel]
         #This is written to extract down from the data the spectrum that we need to fit, dealing with order overlap:
         wl1_out,RV1_out,orders_norm1_out,orders_norm_t1_out,err1_out = [],[],[],[],[]
         # wl2_out,RV2_out,orders_norm2_out,orders_norm_t2_out,err2_out = [],[],[],[],[]
@@ -82,7 +85,7 @@ def load_spectrum_for_fitting(inpath_1,filename,wlcs,drvmin=-100,drvmax=100,vsys
         y_out.append(y1)
         yerr_out.append(yerr1)
         orders_ret.append(orders_returned1)
-    return(v_out,xs_out,y_out,yerr_out,orders_ret)
+    return(v_out,xs_out,y_out,yerr_out,orders_ret,mjd_ret)
     
 
 

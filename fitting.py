@@ -1,3 +1,14 @@
+def read_prior(path):
+    import numpy as np
+    import pdb
+    D = np.genfromtxt(path,dtype=None)
+
+    bounds = {}
+
+    for row in D:
+        bounds[row[0].decode('utf-8')] = [row[1],row[2]]
+    return(bounds)
+
 def supersample(x,f=10):
     """x needs to be sorted more or less have a constant derivative.
     f is half of the oversampling amount.
@@ -326,7 +337,8 @@ def fit_lines(x,y,yerr,bounds,cpu_cores=4,oversample=10,progress_bar=True,nwarmu
     #Now we have a complete array of mandatory parameters.
     for k in mandatory:#Check that all mandatory parameters are present.
         if k not in bounds.keys():
-            raise Exception(f'Given your input in the param dict, {k} has become a mandatory parameter. You need to set all of the following: {mandatory}.')
+            raise Exception(f'Given your input in the param dict, {k} has become a mandatory parameter. You need to set all of the following: {mandatory}. '
+                            'Is there a typo in one of your mandatory parameter names (e.g. simga instead of sigma)?')
 
 
     #Now we determine what all possible free parameters could be, to test for reverse-consistency (junk in the param dict) and to set defaults.
@@ -1257,7 +1269,37 @@ def fit_lines(x,y,yerr,bounds,cpu_cores=4,oversample=10,progress_bar=True,nwarmu
         plt.show()
 
 
-    return(mcmc.get_samples(),line_model,x_supers)
+    return(mcmc.get_samples(),line_model)
+
+def save_fit_output(filename,samples,dataslices,attrs={}):
+    from data import test_exists
+    import xarray as xr
+    import numpy as np
+    import matplotlib.pyplot as plt
+    import pdb
+
+
+    params = list(samples.keys())
+    nsamples = len(samples[params[0]])
+
+    sample_array = np.zeros((len(params),nsamples))
+
+    for i in range(len(params)): sample_array[i]=samples[params[i]]
+
+    sample_da = xr.DataArray(data=sample_array,dims=['params','samplenr'],coords=dict(params=params,samplenr=np.arange(nsamples)))
+
+    dataset_dict = {'samples':sample_da}
+    for i in range(len(dataslices)):
+        D=dataslices[i]
+        dataset_dict[f'slice_{i}'] = xr.DataArray(data=D[1:],dims=[f'axis_{i}',f'wavelength_{i}'],coords={f'axis_{i}':[f'y_{i}',f'y_err_{i}'],f'wavelength_{i}':D[0]})    
+
+    ds = xr.Dataset(dataset_dict,attrs=None)
+
+    ds.to_netcdf(filename)
+
+
+
+
 
 def get_bestfit_params(samples):
     """This gets the medians and standar deviations of all sampled parameters from the samples dict."""
