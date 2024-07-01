@@ -1,12 +1,16 @@
 def read_prior(path):
     import numpy as np
     import pdb
-    D = np.genfromtxt(path,dtype=None)
+    D = np.genfromtxt(path,dtype=None,encoding=None)
 
     bounds = {}
 
     for row in D:
-        bounds[row[0].decode('utf-8')] = [row[1],row[2]]
+        # print(type(row[0]))
+        try:
+            bounds[row[0].decode('utf-8')] = [row[1],row[2]]
+        except:
+            bounds[row[0]] = [row[1],row[2]]
     return(bounds)
 
 def supersample(x,f=10):
@@ -1271,6 +1275,43 @@ def fit_lines(x,y,yerr,bounds,cpu_cores=4,oversample=10,progress_bar=True,nwarmu
 
     return(mcmc.get_samples(),line_model)
 
+
+
+def load_fit_output(filename):
+    import xarray as xr
+    import numpy as np
+    import pdb
+
+    ds = xr.open_dataset(filename)
+
+    sampledict = {}
+    samples = ds.samples.data
+
+
+    # pdb.set_trace()
+    for i in range(len(ds.params)):
+        p = ds.params.data[i]
+        sampledict[p]=samples[i]
+
+    dataslices = []
+    
+    A = ds.attrs
+    try: 
+        mjd = A['mjd']
+    except:
+        mjd = 0.0
+
+    for i in range(1000):
+        try:
+            x=ds[f'wavelength_{i}'].data
+            y=ds[f'slice_{i}'].data[0]
+            e=ds[f'slice_{i}'].data[1]
+
+            data = np.vstack((x,y,e))
+            dataslices.append(data)
+        except:
+            return(sampledict,dataslices,mjd)
+
 def save_fit_output(filename,samples,dataslices,attrs={}):
     from data import test_exists
     import xarray as xr
@@ -1293,7 +1334,7 @@ def save_fit_output(filename,samples,dataslices,attrs={}):
         D=dataslices[i]
         dataset_dict[f'slice_{i}'] = xr.DataArray(data=D[1:],dims=[f'axis_{i}',f'wavelength_{i}'],coords={f'axis_{i}':[f'y_{i}',f'y_err_{i}'],f'wavelength_{i}':D[0]})    
 
-    ds = xr.Dataset(dataset_dict,attrs=None)
+    ds = xr.Dataset(dataset_dict,attrs=attrs)
 
     ds.to_netcdf(filename)
 
